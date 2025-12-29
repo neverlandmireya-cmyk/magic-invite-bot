@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_codes: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          is_active: boolean
+          last_used_at: string | null
+          name: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          name: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          name?: string
+        }
+        Relationships: []
+      }
       invite_links: {
         Row: {
           access_code: string | null
