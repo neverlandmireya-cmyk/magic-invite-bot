@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 interface CodeUser {
   accessCode: string;
   linkId?: string;
+  adminId?: string;
+  adminName?: string;
   isAdmin: boolean;
 }
 
@@ -25,7 +27,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for code-based user in localStorage
     const storedCodeUser = localStorage.getItem(CODE_USER_KEY);
     if (storedCodeUser) {
       try {
@@ -41,16 +42,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const trimmedCode = code.trim().toUpperCase();
 
-      // First check if it's the admin code
-      const { data: adminSetting } = await supabase
-        .from('settings')
-        .select('value')
-        .eq('key', 'admin_code')
+      // Check if it's an admin code
+      const { data: adminData, error: adminError } = await supabase
+        .from('admin_codes')
+        .select('id, code, name, is_active')
+        .eq('code', trimmedCode)
+        .eq('is_active', true)
         .maybeSingle();
 
-      if (adminSetting?.value === trimmedCode) {
+      if (adminData) {
+        // Update last_used_at
+        await supabase
+          .from('admin_codes')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', adminData.id);
+
         const codeUserData: CodeUser = {
           accessCode: trimmedCode,
+          adminId: adminData.id,
+          adminName: adminData.name,
           isAdmin: true,
         };
         localStorage.setItem(CODE_USER_KEY, JSON.stringify(codeUserData));
@@ -59,13 +69,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Check if it's a user invite link code
-      const { data: linkData, error } = await supabase
+      const { data: linkData, error: linkError } = await supabase
         .from('invite_links')
         .select('id, access_code')
         .eq('access_code', trimmedCode)
         .maybeSingle();
 
-      if (error) {
+      if (linkError) {
         return { error: new Error('Failed to verify code') };
       }
 
