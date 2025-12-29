@@ -7,13 +7,15 @@ import {
   LogOut, 
   LayoutDashboard,
   Shield,
-  Key
+  Key,
+  UserCog
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const adminNavItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/links', label: 'Invite Links', icon: Link2 },
+  { path: '/admin-codes', label: 'Admin Access', icon: UserCog },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
