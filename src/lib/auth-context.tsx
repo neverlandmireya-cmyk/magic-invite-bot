@@ -1,19 +1,17 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
 interface CodeUser {
   accessCode: string;
-  linkId: string;
+  linkId?: string;
+  isAdmin: boolean;
 }
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
   codeUser: CodeUser | null;
   loading: boolean;
   isAdmin: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  isAuthenticated: boolean;
   signInWithCode: (code: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -23,8 +21,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const CODE_USER_KEY = 'telegram_code_user';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [codeUser, setCodeUser] = useState<CodeUser | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -38,50 +34,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(CODE_USER_KEY);
       }
     }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    setLoading(false);
   }, []);
-
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
-  };
 
   const signInWithCode = async (code: string) => {
     try {
-      // Verify the code exists in the database
-      const { data, error } = await supabase
+      const trimmedCode = code.trim().toUpperCase();
+
+      // First check if it's the admin code
+      const { data: adminSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'admin_code')
+        .maybeSingle();
+
+      if (adminSetting?.value === trimmedCode) {
+        const codeUserData: CodeUser = {
+          accessCode: trimmedCode,
+          isAdmin: true,
+        };
+        localStorage.setItem(CODE_USER_KEY, JSON.stringify(codeUserData));
+        setCodeUser(codeUserData);
+        return { error: null };
+      }
+
+      // Check if it's a user invite link code
+      const { data: linkData, error } = await supabase
         .from('invite_links')
         .select('id, access_code')
-        .eq('access_code', code.trim().toUpperCase())
+        .eq('access_code', trimmedCode)
         .maybeSingle();
 
       if (error) {
         return { error: new Error('Failed to verify code') };
       }
 
-      if (!data) {
+      if (!linkData) {
         return { error: new Error('Invalid access code') };
       }
 
-      // Store the code user in localStorage
       const codeUserData: CodeUser = {
-        accessCode: data.access_code!,
-        linkId: data.id,
+        accessCode: linkData.access_code!,
+        linkId: linkData.id,
+        isAdmin: false,
       };
       
       localStorage.setItem(CODE_USER_KEY, JSON.stringify(codeUserData));
@@ -94,25 +89,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // Clear code user
     localStorage.removeItem(CODE_USER_KEY);
     setCodeUser(null);
-    
-    // Clear Supabase session if exists
-    await supabase.auth.signOut();
   };
 
-  const isAdmin = !!user;
-  const isAuthenticated = isAdmin || !!codeUser;
+  const isAdmin = codeUser?.isAdmin ?? false;
+  const isAuthenticated = !!codeUser;
 
   return (
     <AuthContext.Provider value={{ 
-      user, 
-      session, 
       codeUser,
-      loading: loading && !codeUser, 
+      loading, 
       isAdmin,
-      signIn, 
+      isAuthenticated,
       signInWithCode,
       signOut 
     }}>

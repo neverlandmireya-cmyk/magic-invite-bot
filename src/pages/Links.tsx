@@ -31,7 +31,7 @@ function generateAccessCode(): string {
 }
 
 export default function Links() {
-  const { user, isAdmin, codeUser } = useAuth();
+  const { isAdmin, codeUser } = useAuth();
   const [links, setLinks] = useState<InviteLink[]>([]);
   const [userLink, setUserLink] = useState<InviteLink | null>(null);
   const [groups, setGroups] = useState<{ id: string; name?: string }[]>([]);
@@ -150,7 +150,7 @@ export default function Links() {
           group_name: selectedGroupData?.name || null,
           invite_link: result.result.invite_link,
           status: 'active',
-          created_by: user?.id,
+          created_by: null,
           access_code: accessCode,
           expires_at: result.result.expire_date 
             ? new Date(result.result.expire_date * 1000).toISOString() 

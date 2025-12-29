@@ -4,7 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Loader2 } from 'lucide-react';
 
 export function DashboardLayout() {
-  const { user, loading, codeUser, isAdmin } = useAuth();
+  const { loading, codeUser, isAdmin } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -16,12 +16,12 @@ export function DashboardLayout() {
   }
 
   // Not authenticated at all
-  if (!user && !codeUser) {
+  if (!codeUser) {
     return <Navigate to="/auth" replace />;
   }
 
   // Code user trying to access non-links page
-  if (codeUser && !isAdmin && location.pathname !== '/links') {
+  if (!isAdmin && location.pathname !== '/links') {
     return <Navigate to="/links" replace />;
   }
 
