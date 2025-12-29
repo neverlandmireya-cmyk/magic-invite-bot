@@ -6,33 +6,55 @@ import {
   Settings, 
   LogOut, 
   LayoutDashboard,
-  Shield
+  Shield,
+  Key
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const navItems = [
+const adminNavItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/links', label: 'Invite Links', icon: Link2 },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const userNavItems = [
+  { path: '/links', label: 'My Invite', icon: Link2 },
+];
+
 export function Sidebar() {
   const location = useLocation();
-  const { signOut } = useAuth();
+  const { signOut, isAdmin, codeUser } = useAuth();
+
+  const navItems = isAdmin ? adminNavItems : userNavItems;
 
   return (
     <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Shield className="w-5 h-5 text-primary" />
+            {isAdmin ? (
+              <Shield className="w-5 h-5 text-primary" />
+            ) : (
+              <Key className="w-5 h-5 text-primary" />
+            )}
           </div>
           <div>
             <h1 className="font-semibold text-foreground">TG Manager</h1>
-            <p className="text-xs text-muted-foreground">Admin Panel</p>
+            <p className="text-xs text-muted-foreground">
+              {isAdmin ? 'Admin Panel' : 'User Access'}
+            </p>
           </div>
         </div>
       </div>
+
+      {codeUser && !isAdmin && (
+        <div className="p-4 mx-4 mt-4 rounded-lg bg-muted/30 border border-border">
+          <p className="text-xs text-muted-foreground mb-1">Access Code</p>
+          <code className="text-sm font-mono font-bold text-foreground">
+            {codeUser.accessCode}
+          </code>
+        </div>
+      )}
 
       <nav className="flex-1 p-4 space-y-1">
         {navItems.map((item) => {

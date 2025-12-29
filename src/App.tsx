@@ -14,10 +14,11 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function AuthRedirect() {
-  const { user, loading } = useAuth();
+  const { user, loading, codeUser } = useAuth();
   
   if (loading) return null;
   if (user) return <Navigate to="/" replace />;
+  if (codeUser) return <Navigate to="/links" replace />;
   return <Auth />;
 }
 
