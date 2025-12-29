@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       invite_links: {
         Row: {
+          access_code: string | null
           created_at: string | null
           created_by: string | null
           expires_at: string | null
@@ -27,6 +28,7 @@ export type Database = {
           used_at: string | null
         }
         Insert: {
+          access_code?: string | null
           created_at?: string | null
           created_by?: string | null
           expires_at?: string | null
@@ -38,6 +40,7 @@ export type Database = {
           used_at?: string | null
         }
         Update: {
+          access_code?: string | null
           created_at?: string | null
           created_by?: string | null
           expires_at?: string | null
@@ -79,7 +82,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      user_owns_link: { Args: { link_access_code: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

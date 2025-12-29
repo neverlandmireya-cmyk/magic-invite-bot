@@ -1,10 +1,11 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 import { Sidebar } from './Sidebar';
 import { Loader2 } from 'lucide-react';
 
 export function DashboardLayout() {
-  const { user, loading } = useAuth();
+  const { user, loading, codeUser, isAdmin } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -14,8 +15,14 @@ export function DashboardLayout() {
     );
   }
 
-  if (!user) {
+  // Not authenticated at all
+  if (!user && !codeUser) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Code user trying to access non-links page
+  if (codeUser && !isAdmin && location.pathname !== '/links') {
+    return <Navigate to="/links" replace />;
   }
 
   return (
