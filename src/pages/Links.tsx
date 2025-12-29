@@ -47,9 +47,17 @@ export default function Links() {
       
       if (groupIdsSetting?.value && botToken?.value) {
         setHasSettings(true);
-        const ids = groupIdsSetting.value.split('\n').filter(Boolean).map(id => ({ id: id.trim() }));
-        setGroups(ids);
-        if (ids.length > 0) setSelectedGroup(ids[0].id);
+        try {
+          // Parse JSON array of {id, name} objects
+          const parsedGroups = JSON.parse(groupIdsSetting.value);
+          setGroups(parsedGroups);
+          if (parsedGroups.length > 0) setSelectedGroup(parsedGroups[0].id);
+        } catch {
+          // Fallback for old format
+          const ids = groupIdsSetting.value.split('\n').filter(Boolean).map(id => ({ id: id.trim() }));
+          setGroups(ids);
+          if (ids.length > 0) setSelectedGroup(ids[0].id);
+        }
       }
     }
 
