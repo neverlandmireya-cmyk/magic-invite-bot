@@ -32,6 +32,7 @@ interface Ticket {
   priority: string;
   created_at: string;
   updated_at: string;
+  reseller_code?: string | null;
 }
 
 interface TicketReply {
@@ -518,6 +519,11 @@ export default function Support() {
                       <span className="font-medium text-foreground truncate">
                         {ticket.subject}
                       </span>
+                      {isAdmin && ticket.reseller_code && (
+                        <Badge className="bg-gradient-to-r from-amber-500 to-orange-500 text-black font-semibold border-0">
+                          Reseller
+                        </Badge>
+                      )}
                       {getStatusBadge(ticket.status)}
                       {getPriorityBadge(ticket.priority)}
                     </div>
