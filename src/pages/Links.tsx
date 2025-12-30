@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,7 @@ async function logActivity(action: string, entityType: string, entityId: string 
 }
 
 export default function Links() {
+  const navigate = useNavigate();
   const { isAdmin, codeUser } = useAuth();
   const [links, setLinks] = useState<InviteLink[]>([]);
   const [userLink, setUserLink] = useState<InviteLink | null>(null);
@@ -745,12 +747,20 @@ If you need support, access the dashboard and visit the Support section.`;
               {userLink.status === 'closed_by_telegram' && (
                 <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30 flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
-                  <div>
+                  <div className="flex-1">
                     <p className="font-semibold text-destructive">Link Closed</p>
-                    <p className="text-sm text-muted-foreground">
-                      Your invite link was automatically closed because you left the Telegram group. 
-                      Please contact support if you need assistance.
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Your invitation link was automatically closed because you left the Telegram group. 
+                      Open a support ticket to generate a new access link; it's free and there are no additional costs.
                     </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      onClick={() => navigate('/support')}
+                    >
+                      Open Support Ticket
+                    </Button>
                   </div>
                 </div>
               )}
