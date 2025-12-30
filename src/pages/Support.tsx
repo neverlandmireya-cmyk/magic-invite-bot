@@ -43,7 +43,7 @@ interface TicketReply {
 }
 
 export default function Support() {
-  const { isAdmin, codeUser } = useAuth();
+  const { isAdmin, isReseller, codeUser } = useAuth();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -381,11 +381,30 @@ export default function Support() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {/* OG Reseller Header */}
+      {isReseller && (
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-orange-500/20 border border-amber-500/30 p-6">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-400/10 via-transparent to-transparent"></div>
+          <div className="relative flex items-center gap-4">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/30">
+              <span className="text-2xl font-black text-black">OG</span>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-amber-400 tracking-wide">OG RESELLER SUPPORT</h2>
+              <p className="text-amber-200/70 text-sm">Priority assistance for verified resellers</p>
+            </div>
+          </div>
+          <div className="absolute top-2 right-4 text-amber-500/20 text-6xl font-black select-none">VIP</div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Ticket</h1>
+          <h1 className={`text-3xl font-bold ${isReseller ? 'text-amber-400' : 'text-foreground'}`}>
+            {isReseller ? 'OG Support' : 'Ticket'}
+          </h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? 'Manage tickets' : 'Get help with your access'}
+            {isAdmin ? 'Manage tickets' : isReseller ? 'Exclusive reseller support channel' : 'Get help with your access'}
           </p>
         </div>
         <div className="flex gap-2">
@@ -393,9 +412,12 @@ export default function Support() {
             <RefreshCw className="w-4 h-4" />
           </Button>
           {!isAdmin && (
-            <Button onClick={() => setShowNewTicket(true)} className="glow-sm">
+            <Button 
+              onClick={() => setShowNewTicket(true)} 
+              className={isReseller ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-semibold shadow-lg shadow-amber-500/30' : 'glow-sm'}
+            >
               <Plus className="w-4 h-4 mr-2" />
-              New Ticket
+              {isReseller ? 'Open VIP Ticket' : 'New Ticket'}
             </Button>
           )}
         </div>
@@ -407,10 +429,14 @@ export default function Support() {
           setFormErrors({});
         }
       }}>
-        <DialogContent className="glass">
+        <DialogContent className={isReseller ? 'border-amber-500/30 bg-gradient-to-br from-background via-background to-amber-900/10' : 'glass'}>
           <DialogHeader>
-            <DialogTitle>Create New Ticket</DialogTitle>
-            <DialogDescription>Describe your issue and we will help you</DialogDescription>
+            <DialogTitle className={isReseller ? 'text-amber-400' : ''}>
+              {isReseller ? 'Open VIP Ticket' : 'Create New Ticket'}
+            </DialogTitle>
+            <DialogDescription>
+              {isReseller ? 'Priority support for OG resellers' : 'Describe your issue and we will help you'}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -444,9 +470,13 @@ export default function Support() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button onClick={createTicket} disabled={creating} className="flex-1 glow-sm">
+              <Button 
+                onClick={createTicket} 
+                disabled={creating} 
+                className={isReseller ? 'flex-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-semibold' : 'flex-1 glow-sm'}
+              >
                 {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-                Create Ticket
+                {isReseller ? 'Submit VIP Ticket' : 'Create Ticket'}
               </Button>
               <Button variant="outline" onClick={() => setShowNewTicket(false)}>Cancel</Button>
             </div>
@@ -454,21 +484,21 @@ export default function Support() {
         </DialogContent>
       </Dialog>
 
-      <Card className="glass">
+      <Card className={isReseller ? 'border-amber-500/20 bg-gradient-to-br from-background via-background to-amber-900/5' : 'glass'}>
         <CardHeader>
-          <CardTitle>
-            {isAdmin ? 'All Tickets' : 'Your Tickets'}
+          <CardTitle className={isReseller ? 'text-amber-400' : ''}>
+            {isAdmin ? 'All Tickets' : isReseller ? 'VIP Tickets' : 'Your Tickets'}
           </CardTitle>
           <CardDescription>
-            {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
+            {tickets.length} ticket{tickets.length !== 1 ? 's' : ''} {isReseller && '• Priority Queue'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {tickets.length === 0 ? (
             <div className="text-center py-8">
-              <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+              <MessageSquare className={`w-12 h-12 mx-auto mb-3 ${isReseller ? 'text-amber-500/50' : 'text-muted-foreground'}`} />
               <p className="text-muted-foreground">
-                {isAdmin ? 'No support tickets yet' : 'No tickets yet. Create one if you need help!'}
+                {isAdmin ? 'No support tickets yet' : isReseller ? 'No VIP tickets yet. Open one for priority support!' : 'No tickets yet. Create one if you need help!'}
               </p>
             </div>
           ) : (
@@ -477,7 +507,11 @@ export default function Support() {
                 <div
                   key={ticket.id}
                   onClick={() => openTicket(ticket)}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                  className={`flex items-center justify-between p-4 rounded-lg cursor-pointer transition-colors ${
+                    isReseller 
+                      ? 'bg-amber-500/5 border border-amber-500/20 hover:bg-amber-500/10 hover:border-amber-500/30' 
+                      : 'bg-muted/30 border border-border hover:bg-muted/50'
+                  }`}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1">
