@@ -8,7 +8,8 @@ import {
   LayoutDashboard,
   Shield,
   Key,
-  UserCog
+  UserCog,
+  HelpCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -16,11 +17,13 @@ const adminNavItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/links', label: 'Invite Links', icon: Link2 },
   { path: '/admin-codes', label: 'Admin Access', icon: UserCog },
+  { path: '/support', label: 'Support', icon: HelpCircle },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const userNavItems = [
   { path: '/links', label: 'My Invite', icon: Link2 },
+  { path: '/support', label: 'Support', icon: HelpCircle },
 ];
 
 export function Sidebar() {
