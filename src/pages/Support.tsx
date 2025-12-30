@@ -63,65 +63,64 @@ export default function Support() {
   const [sendingReply, setSendingReply] = useState(false);
 
   useEffect(() => {
-    // Only load tickets when we have a valid user (admin or regular user with access code)
     if (codeUser) {
       loadTickets();
     }
   }, [codeUser, isAdmin]);
 
   async function loadTickets() {
+    if (!codeUser?.accessCode) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     
     try {
-      let query = (supabase
-        .from('tickets') as any)
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      // If user, only show their tickets
-      if (codeUser && !isAdmin) {
-        query = query.eq('access_code', codeUser.accessCode);
+      const { data, error } = await supabase.functions.invoke('data-api', {
+        body: { code: codeUser.accessCode, action: 'get-tickets' }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setTickets(data.data || []);
       }
-      
-      const { data, error } = await query;
-      
-      if (error) {
-        console.error('Error loading tickets:', error);
-        toast.error('Failed to load tickets');
-      } else {
-        setTickets((data as Ticket[]) || []);
-      }
-    } catch (err) {
-      console.error('Error:', err);
+    } catch (error) {
+      console.error('Failed to load tickets:', error);
+      toast.error('Failed to load tickets');
     }
     
     setLoading(false);
   }
 
   async function loadReplies(ticketId: string) {
+    if (!codeUser?.accessCode) return;
+
     setLoadingReplies(true);
     
     try {
-      const { data, error } = await (supabase
-        .from('ticket_replies') as any)
-        .select('*')
-        .eq('ticket_id', ticketId)
-        .order('created_at', { ascending: true });
-      
-      if (error) {
-        console.error('Error loading replies:', error);
-      } else {
-        setReplies((data as TicketReply[]) || []);
+      const { data, error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'get-ticket-replies',
+          data: { ticketId }
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setReplies(data.data || []);
       }
-    } catch (err) {
-      console.error('Error:', err);
+    } catch (error) {
+      console.error('Failed to load replies:', error);
     }
     
     setLoadingReplies(false);
   }
 
   async function createTicket() {
-    // Validate input
     const result = ticketSchema.safeParse({ subject, message });
     
     if (!result.success) {
@@ -143,32 +142,36 @@ export default function Support() {
 
     setCreating(true);
 
-    const { error } = await (supabase
-      .from('tickets') as any)
-      .insert({
-        access_code: codeUser.accessCode,
-        subject: result.data.subject,
-        message: result.data.message,
-        status: 'open',
-        priority: 'normal',
+    try {
+      const { error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'insert-ticket',
+          data: {
+            subject: result.data.subject,
+            message: result.data.message,
+            status: 'open',
+            priority: 'normal',
+          }
+        }
       });
 
-    if (error) {
-      console.error('Error creating ticket:', error);
-      toast.error('Failed to create ticket');
-    } else {
+      if (error) throw error;
+
       toast.success('Ticket created successfully');
       setShowNewTicket(false);
       setSubject('');
       setMessage('');
       loadTickets();
+    } catch (error) {
+      console.error('Failed to create ticket:', error);
+      toast.error('Failed to create ticket');
     }
 
     setCreating(false);
   }
 
   async function sendReply() {
-    // Validate input
     const result = replySchema.safeParse({ message: replyMessage });
     
     if (!result.success) {
@@ -178,49 +181,55 @@ export default function Support() {
     
     setReplyError(null);
     
-    if (!selectedTicket) return;
+    if (!selectedTicket || !codeUser?.accessCode) return;
 
     setSendingReply(true);
 
-    const { error } = await (supabase
-      .from('ticket_replies') as any)
-      .insert({
-        ticket_id: selectedTicket.id,
-        message: result.data.message,
-        is_admin: isAdmin,
+    try {
+      const { error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'insert-ticket-reply',
+          data: {
+            ticketId: selectedTicket.id,
+            message: result.data.message,
+          }
+        }
       });
 
-    if (error) {
-      console.error('Error sending reply:', error);
-      toast.error('Failed to send reply');
-    } else {
+      if (error) throw error;
+
       setReplyMessage('');
       loadReplies(selectedTicket.id);
-      
-      // Update ticket updated_at
-      await (supabase
-        .from('tickets') as any)
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', selectedTicket.id);
+    } catch (error) {
+      console.error('Failed to send reply:', error);
+      toast.error('Failed to send reply');
     }
 
     setSendingReply(false);
   }
 
   async function updateTicketStatus(ticketId: string, status: string) {
-    const { error } = await (supabase
-      .from('tickets') as any)
-      .update({ status })
-      .eq('id', ticketId);
+    if (!codeUser?.accessCode) return;
 
-    if (error) {
-      toast.error('Failed to update status');
-    } else {
+    try {
+      const { error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'update-ticket',
+          data: { id: ticketId, updates: { status } }
+        }
+      });
+
+      if (error) throw error;
+
       toast.success('Status updated');
       loadTickets();
       if (selectedTicket?.id === ticketId) {
         setSelectedTicket({ ...selectedTicket, status });
       }
+    } catch (error) {
+      toast.error('Failed to update status');
     }
   }
 
@@ -301,14 +310,12 @@ export default function Support() {
           </div>
         )}
 
-        {/* Original message */}
         <Card className="glass">
           <CardContent className="pt-6">
             <p className="text-foreground whitespace-pre-wrap">{selectedTicket.message}</p>
           </CardContent>
         </Card>
 
-        {/* Replies */}
         <div className="space-y-3">
           {loadingReplies ? (
             <div className="flex justify-center py-4">
@@ -338,7 +345,6 @@ export default function Support() {
           )}
         </div>
 
-        {/* Reply form */}
         {selectedTicket.status !== 'closed' && (
           <Card className="glass">
             <CardContent className="pt-6">
@@ -395,7 +401,6 @@ export default function Support() {
         </div>
       </div>
 
-      {/* New Ticket Dialog */}
       <Dialog open={showNewTicket} onOpenChange={(open) => {
         setShowNewTicket(open);
         if (!open) {
@@ -449,7 +454,6 @@ export default function Support() {
         </DialogContent>
       </Dialog>
 
-      {/* Tickets List */}
       <Card className="glass">
         <CardHeader>
           <CardTitle>

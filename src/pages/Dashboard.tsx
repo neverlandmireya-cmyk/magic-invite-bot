@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 import { Link2, CheckCircle, Clock, XCircle, DollarSign, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { format } from 'date-fns';
@@ -20,6 +21,7 @@ interface RevenueEntry {
 }
 
 export default function Dashboard() {
+  const { codeUser } = useAuth();
   const [stats, setStats] = useState<Stats>({ total: 0, active: 0, used: 0, expired: 0 });
   const [totalRevenue, setTotalRevenue] = useState<number>(0);
   const [recentRevenue, setRecentRevenue] = useState<RevenueEntry[]>([]);
@@ -27,46 +29,32 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function fetchStats() {
-      // Fetch link stats
-      const { data, error } = await supabase
-        .from('invite_links')
-        .select('status');
-
-      if (!error && data) {
-        const counts = data.reduce((acc, link) => {
-          acc[link.status as keyof Stats]++;
-          acc.total++;
-          return acc;
-        }, { total: 0, active: 0, used: 0, expired: 0 } as Stats);
-        setStats(counts);
+      if (!codeUser?.accessCode) {
+        setLoading(false);
+        return;
       }
 
-      // Fetch revenue data
-      const { data: revenueData } = await supabase
-        .from('revenue')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      try {
+        const { data, error } = await supabase.functions.invoke('data-api', {
+          body: { code: codeUser.accessCode, action: 'get-dashboard-stats' }
+        });
 
-      if (revenueData) {
-        setRecentRevenue(revenueData);
-        
-        // Get all revenue for total
-        const { data: allRevenue } = await supabase
-          .from('revenue')
-          .select('amount');
-        
-        if (allRevenue) {
-          const grandTotal = allRevenue.reduce((sum, r) => sum + Number(r.amount), 0);
-          setTotalRevenue(grandTotal);
+        if (error) throw error;
+
+        if (data?.success) {
+          setStats(data.stats);
+          setRecentRevenue(data.recentRevenue || []);
+          setTotalRevenue(data.totalRevenue || 0);
         }
+      } catch (error) {
+        console.error('Failed to fetch dashboard stats:', error);
       }
 
       setLoading(false);
     }
 
     fetchStats();
-  }, []);
+  }, [codeUser]);
 
   const statCards = [
     { label: 'Total Links', value: stats.total, icon: Link2, color: 'text-primary' },
