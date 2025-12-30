@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff, ShieldCheck } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 
@@ -68,11 +68,12 @@ export default function Links() {
   // Search
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Delete/Ban/Revoke/Regenerate confirmation
+  // Delete/Ban/Revoke/Regenerate/Unban confirmation
   const [deleteTarget, setDeleteTarget] = useState<InviteLink | null>(null);
   const [banTarget, setBanTarget] = useState<InviteLink | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<InviteLink | null>(null);
   const [regenerateTarget, setRegenerateTarget] = useState<InviteLink | null>(null);
+  const [unbanTarget, setUnbanTarget] = useState<InviteLink | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   
   // Account deleted dialog
@@ -349,7 +350,7 @@ export default function Links() {
     setRegenerating(false);
   }
 
-  // Ban link - revoke on Telegram AND mark as banned in panel
+  // Ban link - revoke on Telegram AND mark as BANNED in panel (blocks access code)
   async function banLink(link: InviteLink) {
     try {
       if (codeUser?.accessCode && link.group_id && link.invite_link) {
@@ -370,7 +371,7 @@ export default function Links() {
 
       const { error } = await supabase
         .from('invite_links')
-        .update({ status: 'revoked' })
+        .update({ status: 'banned' })
         .eq('id', link.id);
 
       if (error) throw error;
@@ -382,11 +383,35 @@ export default function Links() {
         revoked_on_telegram: true,
       }, codeUser?.accessCode || 'unknown');
 
-      toast.success('Link banned and revoked on Telegram');
+      toast.success('User banned - access code blocked');
       setBanTarget(null);
       loadData();
     } catch (error: any) {
-      toast.error('Failed to ban link');
+      toast.error('Failed to ban user');
+    }
+  }
+
+  // Unban link - restore status to allow regeneration
+  async function unbanLink(link: InviteLink) {
+    try {
+      const { error } = await supabase
+        .from('invite_links')
+        .update({ status: 'revoked' })
+        .eq('id', link.id);
+
+      if (error) throw error;
+
+      await logActivity('unban_link', 'invite_link', link.id, {
+        access_code: link.access_code,
+        group_name: link.group_name,
+        previous_status: link.status,
+      }, codeUser?.accessCode || 'unknown');
+
+      toast.success('User unbanned - can now regenerate link');
+      setUnbanTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error('Failed to unban user');
     }
   }
 
@@ -418,12 +443,23 @@ export default function Links() {
     setSubmittingTicket(false);
   }
 
-  // Separate active and banned/revoked links
-  const activeLinks = links.filter(link => link.status !== 'revoked');
-  const bannedLinks = links.filter(link => link.status === 'revoked');
+  // Separate active, revoked (link removed), and banned (user banned) links
+  const activeLinks = links.filter(link => link.status !== 'revoked' && link.status !== 'banned');
+  const revokedLinks = links.filter(link => link.status === 'revoked');
+  const bannedLinks = links.filter(link => link.status === 'banned');
 
   // Filter links based on search
   const filteredActiveLinks = activeLinks.filter(link => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      link.access_code?.toLowerCase().includes(query) ||
+      link.group_name?.toLowerCase().includes(query) ||
+      link.invite_link.toLowerCase().includes(query)
+    );
+  });
+
+  const filteredRevokedLinks = revokedLinks.filter(link => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -479,7 +515,9 @@ If you need support, access the dashboard and visit the Support section.`;
       case 'expired':
         return <Badge variant="outline" className="border-muted-foreground text-muted-foreground">Expired</Badge>;
       case 'revoked':
-        return <Badge variant="outline" className="border-destructive text-destructive">Revoked</Badge>;
+        return <Badge variant="outline" className="border-orange-500 text-orange-500">Removed</Badge>;
+      case 'banned':
+        return <Badge variant="outline" className="border-destructive text-destructive">Banned</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -839,14 +877,46 @@ If you need support, access the dashboard and visit the Support section.`;
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Unban Confirmation Dialog */}
+      <AlertDialog open={!!unbanTarget} onOpenChange={() => setUnbanTarget(null)}>
+        <AlertDialogContent className="glass">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unban User</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will unban the user and allow you to regenerate their link. The user will be moved to the "Removed" section.
+              {unbanTarget?.access_code && (
+                <span className="block mt-2 font-mono text-foreground">{unbanTarget.access_code}</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-success text-success-foreground hover:bg-success/90"
+              onClick={() => unbanTarget && unbanLink(unbanTarget)}
+            >
+              <ShieldCheck className="w-4 h-4 mr-2" />
+              Unban User
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Links with Tabs */}
       <Tabs defaultValue="active" className="w-full">
         <div className="flex items-center justify-between mb-4">
           <TabsList className="bg-muted/50">
             <TabsTrigger value="active" className="gap-2">
-              Invite Links
+              Active
               {activeLinks.length > 0 && (
                 <Badge variant="secondary" className="ml-1 text-xs">{activeLinks.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="removed" className="gap-2">
+              <Unlink className="w-4 h-4" />
+              Removed
+              {revokedLinks.length > 0 && (
+                <Badge variant="outline" className="ml-1 text-xs border-orange-500 text-orange-500">{revokedLinks.length}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="banned" className="gap-2">
@@ -989,6 +1059,80 @@ If you need support, access the dashboard and visit the Support section.`;
           </Card>
         </TabsContent>
 
+        {/* Removed Links Tab */}
+        <TabsContent value="removed">
+          <Card className="glass border-orange-500/30">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Unlink className="w-5 h-5 text-orange-500" />
+                <div>
+                  <CardTitle>Removed Links</CardTitle>
+                  <CardDescription>{filteredRevokedLinks.length} of {revokedLinks.length} removed links</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {filteredRevokedLinks.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  {revokedLinks.length === 0 
+                    ? 'No removed links yet.'
+                    : 'No removed links match your search.'}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {filteredRevokedLinks.map((link) => (
+                    <div
+                      key={link.id}
+                      className="flex items-center justify-between p-4 rounded-lg bg-orange-500/10 border border-orange-500/30"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-1">
+                          <span className="text-sm font-medium text-foreground">
+                            {link.group_name || 'Group'}
+                          </span>
+                          {getStatusBadge(link.status)}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          {link.access_code && (
+                            <span className="font-mono bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded">
+                              {link.access_code}
+                            </span>
+                          )}
+                          <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {/* Regenerate - restore with new link */}
+                        {link.access_code && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRegenerateTarget(link)}
+                            title="Generate new link (same code)"
+                            className="text-success hover:text-success"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {/* Delete from panel only */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteTarget(link)}
+                          title="Delete from panel"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Banned Links Tab */}
         <TabsContent value="banned">
           <Card className="glass border-destructive/30">
@@ -997,7 +1141,7 @@ If you need support, access the dashboard and visit the Support section.`;
                 <ShieldOff className="w-5 h-5 text-destructive" />
                 <div>
                   <CardTitle>Banned Users</CardTitle>
-                  <CardDescription>{filteredBannedLinks.length} of {bannedLinks.length} banned links</CardDescription>
+                  <CardDescription>{filteredBannedLinks.length} of {bannedLinks.length} banned users</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -1006,7 +1150,7 @@ If you need support, access the dashboard and visit the Support section.`;
                 <p className="text-muted-foreground text-center py-8">
                   {bannedLinks.length === 0 
                     ? 'No banned users yet.'
-                    : 'No banned links match your search.'}
+                    : 'No banned users match your search.'}
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -1032,14 +1176,24 @@ If you need support, access the dashboard and visit the Support section.`;
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        {/* Unban - move to removed section */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setUnbanTarget(link)}
+                          title="Unban user"
+                          className="text-success hover:text-success"
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                        </Button>
                         {/* Regenerate - restore access with new link */}
                         {link.access_code && (
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => setRegenerateTarget(link)}
-                            title="Restore access (generate new link)"
-                            className="text-success hover:text-success"
+                            title="Unban + Generate new link"
+                            className="text-primary hover:text-primary"
                           >
                             <RefreshCw className="w-4 h-4" />
                           </Button>
