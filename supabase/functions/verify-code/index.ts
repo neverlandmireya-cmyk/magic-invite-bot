@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     // Check if it's a user invite link code
     const { data: linkData, error: linkError } = await supabase
       .from('invite_links')
-      .select('id, access_code')
+      .select('id, access_code, status')
       .eq('access_code', trimmedCode)
       .maybeSingle();
 
@@ -91,6 +91,19 @@ Deno.serve(async (req) => {
     }
 
     if (linkData) {
+      // Check if user is banned
+      if (linkData.status === 'banned') {
+        console.log('Banned user attempted login:', trimmedCode);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "This user is banned",
+            isBanned: true
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       console.log('User login successful with access code');
       return new Response(
         JSON.stringify({

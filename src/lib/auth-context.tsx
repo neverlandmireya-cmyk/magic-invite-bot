@@ -14,7 +14,8 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   isAuthenticated: boolean;
-  signInWithCode: (code: string) => Promise<{ error: Error | null }>;
+  isBanned: boolean;
+  signInWithCode: (code: string) => Promise<{ error: Error | null; isBanned?: boolean }>;
   signOut: () => Promise<void>;
 }
 
@@ -25,6 +26,7 @@ const CODE_USER_KEY = 'telegram_code_user';
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [codeUser, setCodeUser] = useState<CodeUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isBanned, setIsBanned] = useState(false);
 
   useEffect(() => {
     const storedCodeUser = localStorage.getItem(CODE_USER_KEY);
@@ -50,6 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error || !data?.success) {
+        // Check if user is banned
+        if (data?.isBanned) {
+          setIsBanned(true);
+        }
         // Session is no longer valid
         localStorage.removeItem(CODE_USER_KEY);
         setCodeUser(null);
@@ -58,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const newCodeUser: CodeUser = data.data;
         localStorage.setItem(CODE_USER_KEY, JSON.stringify(newCodeUser));
         setCodeUser(newCodeUser);
+        setIsBanned(false);
       }
     } catch {
       // On error, keep stored session but don't trust it fully
@@ -90,12 +97,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (!data?.success) {
+        // Check if user is banned
+        if (data?.isBanned) {
+          setIsBanned(true);
+          return { error: new Error('This user is banned'), isBanned: true };
+        }
         return { error: new Error(data?.error || 'Invalid access code') };
       }
 
       const codeUserData: CodeUser = data.data;
       localStorage.setItem(CODE_USER_KEY, JSON.stringify(codeUserData));
       setCodeUser(codeUserData);
+      setIsBanned(false);
       return { error: null };
 
     } catch (err) {
@@ -106,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     localStorage.removeItem(CODE_USER_KEY);
     setCodeUser(null);
+    setIsBanned(false);
   };
 
   const isAdmin = codeUser?.isAdmin ?? false;
@@ -117,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading, 
       isAdmin,
       isAuthenticated,
+      isBanned,
       signInWithCode,
       signOut 
     }}>
