@@ -57,7 +57,7 @@ async function logActivity(action: string, entityType: string, entityId: string 
 
 export default function Links() {
   const navigate = useNavigate();
-  const { isAdmin, isReseller, codeUser } = useAuth();
+  const { isAdmin, isReseller, codeUser, refreshUser } = useAuth();
   const [links, setLinks] = useState<InviteLink[]>([]);
   const [userLink, setUserLink] = useState<InviteLink | null>(null);
   const [groups, setGroups] = useState<{ id: string; name?: string }[]>([]);
@@ -275,6 +275,9 @@ export default function Links() {
       setCopied(false);
       
       toast.success('Invite link generated! 1 credit used.');
+      
+      // Refresh user data to update credits in real-time
+      await refreshUser();
       loadData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to generate link');
