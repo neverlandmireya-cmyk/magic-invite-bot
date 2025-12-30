@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
     });
 
     // Parse request body
-    const { adminCode, groupId, memberLimit = 1, accessCode } = await req.json();
+    const { adminCode, groupId, inviteLink } = await req.json();
 
     // Validate input
     if (!adminCode || typeof adminCode !== 'string' || adminCode.length < 6 || adminCode.length > 20) {
@@ -38,6 +38,14 @@ Deno.serve(async (req) => {
       console.error('Invalid group ID');
       return new Response(
         JSON.stringify({ error: "Group ID is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!inviteLink || typeof inviteLink !== 'string') {
+      console.error('Invalid invite link');
+      return new Response(
+        JSON.stringify({ error: "Invite link is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -75,21 +83,16 @@ Deno.serve(async (req) => {
 
     const botToken = tokenSetting.value;
 
-    // Create link name with the access code
-    const linkName = accessCode ? `[CODE] ${accessCode}` : undefined;
-
-    // Call Telegram API server-side
-    console.log('Creating invite link for group:', groupId, 'with name:', linkName);
+    // Call Telegram API to revoke the invite link
+    console.log('Revoking invite link for group:', groupId, 'link:', inviteLink);
     const response = await fetch(
-      `https://api.telegram.org/bot${botToken}/createChatInviteLink`,
+      `https://api.telegram.org/bot${botToken}/revokeChatInviteLink`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: groupId,
-          member_limit: Math.min(Math.max(1, memberLimit), 99999),
-          creates_join_request: false,
-          name: linkName, // This name is visible to admins in Telegram
+          invite_link: inviteLink,
         }),
       }
     );
@@ -98,18 +101,22 @@ Deno.serve(async (req) => {
 
     if (!result.ok) {
       console.error('Telegram API error:', result.description);
+      // Don't fail completely - the link might already be revoked or expired
       return new Response(
-        JSON.stringify({ error: result.description || "Failed to create invite link" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ 
+          success: false, 
+          warning: result.description || "Failed to revoke link on Telegram",
+          telegram_error: true
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log('Invite link created successfully with name:', linkName);
+    console.log('Invite link revoked successfully');
     return new Response(
       JSON.stringify({ 
         success: true, 
-        invite_link: result.result.invite_link,
-        expire_date: result.result.expire_date 
+        message: "Link revoked on Telegram"
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
