@@ -154,12 +154,17 @@ export default function Links() {
     setGenerating(true);
 
     try {
-      // Call Edge Function instead of Telegram API directly
+      // Generate the access code first so we can include it in the Telegram link name
+      const accessCode = generateAccessCode();
+      const selectedGroupData = groups.find(g => g.id === selectedGroup);
+
+      // Call Edge Function with access code to set as link name in Telegram
       const { data, error } = await supabase.functions.invoke('telegram-invite', {
         body: { 
           adminCode: codeUser.accessCode,
           groupId: selectedGroup,
-          memberLimit: 1 
+          memberLimit: 1,
+          accessCode: accessCode // Pass code to be used as link name
         }
       });
 
@@ -170,9 +175,6 @@ export default function Links() {
       if (!data?.success) {
         throw new Error(data?.error || 'Failed to create invite link');
       }
-
-      const accessCode = generateAccessCode();
-      const selectedGroupData = groups.find(g => g.id === selectedGroup);
 
       const { data: insertedLink, error: insertError } = await supabase
         .from('invite_links')
@@ -214,6 +216,23 @@ export default function Links() {
 
   async function deleteLink(link: InviteLink) {
     try {
+      // First try to revoke on Telegram
+      if (codeUser?.accessCode && link.group_id && link.invite_link) {
+        const { data: revokeData } = await supabase.functions.invoke('telegram-revoke', {
+          body: { 
+            adminCode: codeUser.accessCode,
+            groupId: link.group_id,
+            inviteLink: link.invite_link
+          }
+        });
+        
+        if (revokeData?.success) {
+          console.log('Link revoked on Telegram');
+        } else if (revokeData?.warning) {
+          console.log('Telegram revoke warning:', revokeData.warning);
+        }
+      }
+
       const { error } = await supabase
         .from('invite_links')
         .delete()
@@ -224,9 +243,10 @@ export default function Links() {
       await logActivity('delete_link', 'invite_link', link.id, {
         access_code: link.access_code,
         group_name: link.group_name,
+        revoked_on_telegram: true,
       }, codeUser?.accessCode || 'unknown');
 
-      toast.success('Link deleted');
+      toast.success('Link deleted and revoked on Telegram');
       setDeleteTarget(null);
       loadData();
     } catch (error: any) {
@@ -236,6 +256,23 @@ export default function Links() {
 
   async function banLink(link: InviteLink) {
     try {
+      // First try to revoke on Telegram
+      if (codeUser?.accessCode && link.group_id && link.invite_link) {
+        const { data: revokeData } = await supabase.functions.invoke('telegram-revoke', {
+          body: { 
+            adminCode: codeUser.accessCode,
+            groupId: link.group_id,
+            inviteLink: link.invite_link
+          }
+        });
+        
+        if (revokeData?.success) {
+          console.log('Link revoked on Telegram');
+        } else if (revokeData?.warning) {
+          console.log('Telegram revoke warning:', revokeData.warning);
+        }
+      }
+
       const { error } = await supabase
         .from('invite_links')
         .update({ status: 'revoked' })
@@ -247,9 +284,10 @@ export default function Links() {
         access_code: link.access_code,
         group_name: link.group_name,
         previous_status: link.status,
+        revoked_on_telegram: true,
       }, codeUser?.accessCode || 'unknown');
 
-      toast.success('Link banned/revoked');
+      toast.success('Link banned and revoked on Telegram');
       setBanTarget(null);
       loadData();
     } catch (error: any) {

@@ -3,5 +3,8 @@ project_id = "laowfqzazxgxnkknsvzx"
 [functions.telegram-invite]
 verify_jwt = false
 
+[functions.telegram-revoke]
+verify_jwt = false
+
 [functions.verify-code]
 verify_jwt = false
