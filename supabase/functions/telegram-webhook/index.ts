@@ -134,17 +134,61 @@ Deno.serve(async (req) => {
       if (newStatus === 'member' && inviteLink) {
         console.log(`User ${user?.id} joined using invite link: ${inviteLink}`);
         
-        const { error } = await supabase
+        // Find the link record to get access_code
+        const { data: joinedLink } = await supabase
           .from('invite_links')
-          .update({ 
-            status: 'used',
-            used_at: new Date().toISOString(),
-          })
+          .select('*')
           .eq('invite_link', inviteLink)
-          .eq('status', 'active');
+          .maybeSingle();
 
-        if (!error) {
-          console.log('Link marked as used');
+        if (joinedLink) {
+          // Update link status to used
+          await supabase
+            .from('invite_links')
+            .update({ 
+              status: 'used',
+              used_at: new Date().toISOString(),
+            })
+            .eq('id', joinedLink.id);
+
+          // Log the join event
+          await supabase.from('activity_logs').insert({
+            action: 'member_joined',
+            entity_type: 'invite_link',
+            entity_id: joinedLink.id,
+            details: {
+              access_code: joinedLink.access_code,
+              group_id: chatId,
+              group_name: chatMember.chat?.title,
+              user_id: user?.id,
+              username: user?.username,
+              first_name: user?.first_name,
+            },
+            performed_by: 'telegram-webhook',
+          });
+
+          console.log('Link marked as used and join logged');
+        }
+      }
+
+      // Log when member leaves (even if no link found)
+      if (wasActiveMember && hasLeft) {
+        // Already logged above when revoking, but log if no link was found
+        if (!inviteLink) {
+          await supabase.from('activity_logs').insert({
+            action: 'member_left',
+            entity_type: 'group',
+            entity_id: chatId,
+            details: {
+              group_id: chatId,
+              group_name: chatMember.chat?.title,
+              user_id: user?.id,
+              username: user?.username,
+              first_name: user?.first_name,
+              note: 'No matching invite link found',
+            },
+            performed_by: 'telegram-webhook',
+          });
         }
       }
     }
