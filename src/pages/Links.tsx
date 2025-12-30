@@ -47,7 +47,7 @@ export default function Links() {
   const [generatedLink, setGeneratedLink] = useState<InviteLink | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const dashboardUrl = window.location.origin;
+  const dashboardUrl = 'https://login.exylus.net';
 
   useEffect(() => {
     loadData();
