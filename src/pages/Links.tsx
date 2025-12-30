@@ -7,8 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, Key, MessageSquare, Check } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface InviteLink {
@@ -32,6 +34,21 @@ function generateAccessCode(): string {
   return code;
 }
 
+// Logging helper
+async function logActivity(action: string, entityType: string, entityId: string | null, details: Record<string, any>, performedBy: string) {
+  try {
+    await supabase.from('activity_logs').insert({
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      details,
+      performed_by: performedBy,
+    });
+  } catch (error) {
+    console.error('Failed to log activity:', error);
+  }
+}
+
 export default function Links() {
   const { isAdmin, codeUser } = useAuth();
   const [links, setLinks] = useState<InviteLink[]>([]);
@@ -46,6 +63,13 @@ export default function Links() {
   const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<InviteLink | null>(null);
   const [copied, setCopied] = useState(false);
+  
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Delete/Ban confirmation
+  const [deleteTarget, setDeleteTarget] = useState<InviteLink | null>(null);
+  const [banTarget, setBanTarget] = useState<InviteLink | null>(null);
 
   const dashboardUrl = 'https://login.exylus.net';
 
@@ -163,6 +187,13 @@ export default function Links() {
 
       if (insertError) throw insertError;
 
+      // Log the activity
+      await logActivity('generate_link', 'invite_link', insertedLink.id, {
+        group_id: selectedGroup,
+        group_name: selectedGroupData?.name,
+        access_code: accessCode,
+      }, codeUser.accessCode);
+
       // Show welcome message dialog
       setGeneratedLink(insertedLink);
       setShowWelcomeDialog(true);
@@ -176,6 +207,62 @@ export default function Links() {
 
     setGenerating(false);
   }
+
+  async function deleteLink(link: InviteLink) {
+    try {
+      const { error } = await supabase
+        .from('invite_links')
+        .delete()
+        .eq('id', link.id);
+
+      if (error) throw error;
+
+      await logActivity('delete_link', 'invite_link', link.id, {
+        access_code: link.access_code,
+        group_name: link.group_name,
+      }, codeUser?.accessCode || 'unknown');
+
+      toast.success('Link deleted');
+      setDeleteTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error('Failed to delete link');
+    }
+  }
+
+  async function banLink(link: InviteLink) {
+    try {
+      const { error } = await supabase
+        .from('invite_links')
+        .update({ status: 'revoked' })
+        .eq('id', link.id);
+
+      if (error) throw error;
+
+      await logActivity('ban_link', 'invite_link', link.id, {
+        access_code: link.access_code,
+        group_name: link.group_name,
+        previous_status: link.status,
+      }, codeUser?.accessCode || 'unknown');
+
+      toast.success('Link banned/revoked');
+      setBanTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error('Failed to ban link');
+    }
+  }
+
+  // Filter links based on search
+  const filteredLinks = links.filter(link => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      link.access_code?.toLowerCase().includes(query) ||
+      link.group_name?.toLowerCase().includes(query) ||
+      link.invite_link.toLowerCase().includes(query)
+    );
+  });
 
   function getWelcomeMessage(link: InviteLink): string {
     return `Welcome!
@@ -403,20 +490,83 @@ If you need support, access the dashboard and visit the Support section.`;
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent className="glass">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Link</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to permanently delete this invite link?
+              {deleteTarget?.access_code && (
+                <span className="block mt-2 font-mono text-foreground">{deleteTarget.access_code}</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteLink(deleteTarget)}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Ban Confirmation Dialog */}
+      <AlertDialog open={!!banTarget} onOpenChange={() => setBanTarget(null)}>
+        <AlertDialogContent className="glass">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ban/Revoke Link</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revoke the link and mark it as banned. The user will no longer be able to use it.
+              {banTarget?.access_code && (
+                <span className="block mt-2 font-mono text-foreground">{banTarget.access_code}</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
+              onClick={() => banTarget && banLink(banTarget)}
+            >
+              Ban Link
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Link History */}
       <Card className="glass">
         <CardHeader>
-          <CardTitle>Link History</CardTitle>
-          <CardDescription>{links.length} invite links generated</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Link History</CardTitle>
+              <CardDescription>{filteredLinks.length} of {links.length} links</CardDescription>
+            </div>
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by code..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-input"
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          {links.length === 0 ? (
+          {filteredLinks.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
-              No invite links yet. Generate your first one above!
+              {links.length === 0 
+                ? 'No invite links yet. Generate your first one above!'
+                : 'No links match your search.'}
             </p>
           ) : (
             <div className="space-y-3">
-              {links.map((link) => (
+              {filteredLinks.map((link) => (
                 <div
                   key={link.id}
                   className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
@@ -467,6 +617,26 @@ If you need support, access the dashboard and visit the Support section.`;
                       <a href={link.invite_link} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-4 h-4" />
                       </a>
+                    </Button>
+                    {link.status !== 'revoked' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setBanTarget(link)}
+                        title="Ban/Revoke link"
+                        className="text-warning hover:text-warning"
+                      >
+                        <Ban className="w-4 h-4" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeleteTarget(link)}
+                      title="Delete link"
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
