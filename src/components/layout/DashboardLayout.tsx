@@ -20,8 +20,9 @@ export function DashboardLayout() {
     return <Navigate to="/auth" replace />;
   }
 
-  // Code user trying to access non-links page
-  if (!isAdmin && location.pathname !== '/links') {
+  // Code user trying to access admin-only pages
+  const userAllowedPaths = ['/links', '/support'];
+  if (!isAdmin && !userAllowedPaths.includes(location.pathname)) {
     return <Navigate to="/links" replace />;
   }
 
