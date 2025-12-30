@@ -1,33 +1,22 @@
-import { Link, useLocation } from 'react-router-dom';
-import { cn } from '@/lib/utils';
-import { useAuth } from '@/lib/auth-context';
-import { 
-  Link2, 
-  Settings, 
-  LogOut, 
-  LayoutDashboard,
-  Shield,
-  Key,
-  UserCog,
-  HelpCircle,
-  Menu,
-  X
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { useState } from 'react';
+import { Link, useLocation } from "react-router-dom";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
+import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useState } from "react";
 
 const adminNavItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/links', label: 'Invite Links', icon: Link2 },
-  { path: '/admin-codes', label: 'Admin Access', icon: UserCog },
-  { path: '/support', label: 'Ticket', icon: HelpCircle },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: "/", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/links", label: "Invite Links", icon: Link2 },
+  { path: "/admin-codes", label: "Admin Access", icon: UserCog },
+  { path: "/support", label: "Ticket", icon: HelpCircle },
+  { path: "/settings", label: "Settings", icon: Settings },
 ];
 
 const userNavItems = [
-  { path: '/links', label: 'My Invite', icon: Link2 },
-  { path: '/support', label: 'Ticket', icon: HelpCircle },
+  { path: "/links", label: "My Invite", icon: Link2 },
+  { path: "/support", label: "Ticket", icon: HelpCircle },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -41,26 +30,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            {isAdmin ? (
-              <Shield className="w-5 h-5 text-primary" />
-            ) : (
-              <Key className="w-5 h-5 text-primary" />
-            )}
+            {isAdmin ? <Shield className="w-5 h-5 text-primary" /> : <Key className="w-5 h-5 text-primary" />}
           </div>
           <div>
-            <h1 className="font-semibold text-foreground">TG Manager</h1>
-            <p className="text-xs text-muted-foreground">
-              {isAdmin ? 'Admin Panel' : 'User Access'}
-            </p>
+            <h1 className="font-semibold text-foreground">EXYLUS.NET</h1>
+            <p className="text-xs text-muted-foreground">{isAdmin ? "Admin Panel" : "User Access"}</p>
           </div>
         </div>
       </div>
 
       {codeUser && !isAdmin && (
         <div className="px-4 py-3 mx-4 mt-4 rounded-lg bg-muted/30 border border-border">
-          <code className="text-sm font-mono font-bold text-foreground">
-            {codeUser.accessCode}
-          </code>
+          <code className="text-sm font-mono font-bold text-foreground">{codeUser.accessCode}</code>
         </div>
       )}
 
@@ -68,7 +49,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
-          
+
           return (
             <Link
               key={item.path}
@@ -76,9 +57,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               onClick={onNavigate}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
-                isActive 
-                  ? "bg-sidebar-accent text-primary" 
-                  : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                isActive
+                  ? "bg-sidebar-accent text-primary"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
               )}
             >
               <Icon className="w-5 h-5" />
@@ -113,7 +94,7 @@ export function Sidebar() {
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
             <Shield className="w-4 h-4 text-primary" />
           </div>
-          <h1 className="font-semibold text-foreground">TG Manager</h1>
+          <h1 className="font-semibold text-foreground">EXYLUS.NET</h1>
         </div>
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
