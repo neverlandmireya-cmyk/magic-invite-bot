@@ -9,9 +9,13 @@ import {
   Shield,
   Key,
   UserCog,
-  HelpCircle
+  HelpCircle,
+  Menu,
+  X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { useState } from 'react';
 
 const adminNavItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -26,14 +30,14 @@ const userNavItems = [
   { path: '/support', label: 'Ticket', icon: HelpCircle },
 ];
 
-export function Sidebar() {
+function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
   const { signOut, isAdmin, codeUser } = useAuth();
 
   const navItems = isAdmin ? adminNavItems : userNavItems;
 
   return (
-    <aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
+    <>
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -69,6 +73,7 @@ export function Sidebar() {
             <Link
               key={item.path}
               to={item.path}
+              onClick={onNavigate}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
                 isActive 
@@ -93,6 +98,41 @@ export function Sidebar() {
           Sign Out
         </Button>
       </div>
-    </aside>
+    </>
+  );
+}
+
+export function Sidebar() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      {/* Mobile Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-sidebar border-b border-sidebar-border p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Shield className="w-4 h-4 text-primary" />
+          </div>
+          <h1 className="font-semibold text-foreground">TG Manager</h1>
+        </div>
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <Menu className="w-5 h-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-64 p-0 bg-sidebar border-sidebar-border">
+            <div className="h-full flex flex-col">
+              <SidebarContent onNavigate={() => setOpen(false)} />
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-64 h-screen bg-sidebar border-r border-sidebar-border flex-col sticky top-0">
+        <SidebarContent />
+      </aside>
+    </>
   );
 }
