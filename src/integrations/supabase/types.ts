@@ -83,6 +83,8 @@ export type Database = {
           group_name: string | null
           id: string
           invite_link: string
+          note: string | null
+          receipt_url: string | null
           status: string | null
           used_at: string | null
         }
@@ -97,6 +99,8 @@ export type Database = {
           group_name?: string | null
           id?: string
           invite_link: string
+          note?: string | null
+          receipt_url?: string | null
           status?: string | null
           used_at?: string | null
         }
@@ -111,6 +115,8 @@ export type Database = {
           group_name?: string | null
           id?: string
           invite_link?: string
+          note?: string | null
+          receipt_url?: string | null
           status?: string | null
           used_at?: string | null
         }
