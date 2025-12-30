@@ -742,6 +742,18 @@ If you need support, access the dashboard and visit the Support section.`;
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {userLink.status === 'closed_by_telegram' && (
+                <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-destructive">Link Closed</p>
+                    <p className="text-sm text-muted-foreground">
+                      Your invite link was automatically closed because you left the Telegram group. 
+                      Please contact support if you need assistance.
+                    </p>
+                  </div>
+                </div>
+              )}
               {userLink.group_name && (
                 <div className="p-3 rounded-lg bg-primary/10 border border-primary/30 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
@@ -763,8 +775,8 @@ If you need support, access the dashboard and visit the Support section.`;
                   <Copy className="w-4 h-4 mr-2" />
                   Copy Link
                 </Button>
-                <Button asChild className="flex-1 glow-sm">
-                  <a href={userLink.invite_link} target="_blank" rel="noopener noreferrer">
+                <Button asChild className="flex-1 glow-sm" disabled={userLink.status === 'closed_by_telegram'}>
+                  <a href={userLink.status !== 'closed_by_telegram' ? userLink.invite_link : undefined} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="w-4 h-4 mr-2" />
                     Join Group
                   </a>
