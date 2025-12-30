@@ -40,15 +40,15 @@ function generateAccessCode(): string {
   return code;
 }
 
-// Logging helper
+// Secure logging helper - uses Edge Function
 async function logActivity(action: string, entityType: string, entityId: string | null, details: Record<string, any>, performedBy: string) {
   try {
-    await supabase.from('activity_logs').insert({
-      action,
-      entity_type: entityType,
-      entity_id: entityId,
-      details,
-      performed_by: performedBy,
+    await supabase.functions.invoke('data-api', {
+      body: {
+        code: performedBy,
+        action: 'insert-activity-log',
+        data: { action, entity_type: entityType, entity_id: entityId, details }
+      }
     });
   } catch (error) {
     console.error('Failed to log activity:', error);
@@ -111,59 +111,60 @@ export default function Links() {
   }, [codeUser]);
 
   async function loadData() {
-    setLoading(true);
-
-    // If user logged in with a code, fetch only their link
-    if (codeUser && !isAdmin) {
-      const { data: linkData } = await supabase
-        .from('invite_links')
-        .select('*')
-        .eq('access_code', codeUser.accessCode)
-        .maybeSingle();
-
-      if (linkData) {
-        setUserLink(linkData);
-      }
+    if (!codeUser?.accessCode) {
       setLoading(false);
       return;
     }
 
-    // Admin flow - load settings and all links
-    const { data: settings } = await supabase
-      .from('settings')
-      .select('key, value')
-      .in('key', ['group_ids']); // Only fetch group_ids, not bot_token (it's now server-only)
+    setLoading(true);
 
-    if (settings) {
-      const groupIdsSetting = settings.find(s => s.key === 'group_ids');
-      
-      // Check if bot token is configured (without exposing it)
-      const { count } = await supabase
-        .from('settings')
-        .select('*', { count: 'exact', head: true })
-        .eq('key', 'bot_token');
-      
-      if (groupIdsSetting?.value && count && count > 0) {
-        setHasSettings(true);
-        try {
-          const parsedGroups = JSON.parse(groupIdsSetting.value);
-          setGroups(parsedGroups);
-          if (parsedGroups.length > 0) setSelectedGroup(parsedGroups[0].id);
-        } catch {
-          const ids = groupIdsSetting.value.split('\n').filter(Boolean).map(id => ({ id: id.trim() }));
-          setGroups(ids);
-          if (ids.length > 0) setSelectedGroup(ids[0].id);
+    try {
+      // Fetch links via Edge Function
+      const { data: linksResponse, error: linksError } = await supabase.functions.invoke('data-api', {
+        body: { code: codeUser.accessCode, action: 'get-links' }
+      });
+
+      if (linksError) throw linksError;
+
+      if (!isAdmin) {
+        // User view - just their link
+        if (linksResponse?.data && linksResponse.data.length > 0) {
+          setUserLink(linksResponse.data[0]);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Admin view - fetch settings and all links
+      const { data: settingsResponse, error: settingsError } = await supabase.functions.invoke('data-api', {
+        body: { code: codeUser.accessCode, action: 'get-settings' }
+      });
+
+      if (settingsError) throw settingsError;
+
+      if (settingsResponse?.settings) {
+        const groupIdsSetting = settingsResponse.settings.find((s: { key: string; value: string }) => s.key === 'group_ids');
+        
+        if (groupIdsSetting?.value && settingsResponse.hasBotToken) {
+          setHasSettings(true);
+          try {
+            const parsedGroups = JSON.parse(groupIdsSetting.value);
+            setGroups(parsedGroups);
+            if (parsedGroups.length > 0) setSelectedGroup(parsedGroups[0].id);
+          } catch {
+            const ids = groupIdsSetting.value.split('\n').filter(Boolean).map((id: string) => ({ id: id.trim() }));
+            setGroups(ids);
+            if (ids.length > 0) setSelectedGroup(ids[0].id);
+          }
         }
       }
-    }
 
-    const { data: linksData } = await supabase
-      .from('invite_links')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (linksData) {
-      setLinks(linksData);
+      if (linksResponse?.data) {
+        setLinks(linksResponse.data);
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+      toast.error('Failed to load data');
     }
 
     setLoading(false);
@@ -221,31 +222,44 @@ export default function Links() {
         throw new Error(data?.error || 'Failed to create invite link');
       }
 
-      const { data: insertedLink, error: insertError } = await supabase
-        .from('invite_links')
-        .insert({
-          group_id: selectedGroup,
-          group_name: selectedGroupData?.name || null,
-          invite_link: data.invite_link,
-          status: 'active',
-          access_code: accessCode,
-          expires_at: data.expire_date 
-            ? new Date(data.expire_date * 1000).toISOString() 
-            : null,
-        })
-        .select()
-        .single();
+      // Insert link via Edge Function
+      const { data: insertResponse, error: insertError } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'insert-link',
+          data: {
+            group_id: selectedGroup,
+            group_name: selectedGroupData?.name || null,
+            invite_link: data.invite_link,
+            status: 'active',
+            access_code: accessCode,
+            expires_at: data.expire_date 
+              ? new Date(data.expire_date * 1000).toISOString() 
+              : null,
+          }
+        }
+      });
 
-      if (insertError) throw insertError;
+      if (insertError || !insertResponse?.success) {
+        throw new Error(insertResponse?.error || 'Failed to insert link');
+      }
 
-      // Add revenue record
+      const insertedLink = insertResponse.data;
+
+      // Add revenue record via Edge Function
       if (price > 0) {
-        await supabase.from('revenue').insert({
-          link_id: insertedLink.id,
-          access_code: accessCode,
-          amount: price,
-          description: `Link generated for ${selectedGroupData?.name || selectedGroup}`,
-          created_by: codeUser.accessCode,
+        await supabase.functions.invoke('data-api', {
+          body: {
+            code: codeUser.accessCode,
+            action: 'insert-revenue',
+            data: {
+              link_id: insertedLink.id,
+              access_code: accessCode,
+              amount: price,
+              description: `Link generated for ${selectedGroupData?.name || selectedGroup}`,
+              created_by: codeUser.accessCode,
+            }
+          }
         });
       }
 
@@ -273,9 +287,14 @@ export default function Links() {
 
   // Delete user permanently (revokes Telegram link, removes revenue, removes from panel)
   async function deleteUserPermanently(link: InviteLink) {
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
     try {
       // First, revoke the link on Telegram
-      if (codeUser?.accessCode && link.group_id && link.invite_link) {
+      if (link.group_id && link.invite_link) {
         await supabase.functions.invoke('telegram-revoke', {
           body: { 
             adminCode: codeUser.accessCode,
@@ -285,21 +304,29 @@ export default function Links() {
         });
       }
 
-      // Delete associated revenue entries
+      // Delete associated revenue entries via Edge Function
       if (link.access_code) {
-        await supabase
-          .from('revenue')
-          .delete()
-          .eq('access_code', link.access_code);
+        await supabase.functions.invoke('data-api', {
+          body: {
+            code: codeUser.accessCode,
+            action: 'delete-revenue',
+            data: { accessCodeToDelete: link.access_code }
+          }
+        });
       }
 
-      // Delete the link record
-      const { error } = await supabase
-        .from('invite_links')
-        .delete()
-        .eq('id', link.id);
+      // Delete the link record via Edge Function
+      const { data: deleteResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'delete-link',
+          data: { id: link.id }
+        }
+      });
 
-      if (error) throw error;
+      if (error || !deleteResponse?.success) {
+        throw new Error(deleteResponse?.error || 'Failed to delete link');
+      }
 
       await logActivity('delete_user', 'invite_link', link.id, {
         access_code: link.access_code,
@@ -307,7 +334,7 @@ export default function Links() {
         action: 'permanent_deletion',
         telegram_revoked: true,
         revenue_deleted: true,
-      }, codeUser?.accessCode || 'unknown');
+      }, codeUser.accessCode);
 
       toast.success('User deleted permanently (Telegram link revoked, revenue removed)');
       setDeleteUserTarget(null);
@@ -319,18 +346,28 @@ export default function Links() {
 
   // Delete from panel only (no Telegram action)
   async function deleteLink(link: InviteLink) {
-    try {
-      const { error } = await supabase
-        .from('invite_links')
-        .delete()
-        .eq('id', link.id);
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
 
-      if (error) throw error;
+    try {
+      const { data: deleteResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'delete-link',
+          data: { id: link.id }
+        }
+      });
+
+      if (error || !deleteResponse?.success) {
+        throw new Error(deleteResponse?.error || 'Failed to delete link');
+      }
 
       await logActivity('delete_link', 'invite_link', link.id, {
         access_code: link.access_code,
         group_name: link.group_name,
-      }, codeUser?.accessCode || 'unknown');
+      }, codeUser.accessCode);
 
       toast.success('Link deleted from panel');
       setDeleteTarget(null);
@@ -342,12 +379,12 @@ export default function Links() {
 
   // Revoke on Telegram only (keeps record in panel with revoked status)
   async function revokeOnTelegram(link: InviteLink) {
-    try {
-      if (!codeUser?.accessCode) {
-        toast.error('Authentication required');
-        return;
-      }
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
 
+    try {
       const { data: revokeData, error } = await supabase.functions.invoke('telegram-revoke', {
         body: { 
           adminCode: codeUser.accessCode,
@@ -358,11 +395,18 @@ export default function Links() {
 
       if (error) throw error;
 
-      // Update status in database
-      await supabase
-        .from('invite_links')
-        .update({ status: 'revoked' })
-        .eq('id', link.id);
+      // Update status in database via Edge Function
+      const { data: updateResponse, error: updateError } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: { id: link.id, updates: { status: 'revoked' } }
+        }
+      });
+
+      if (updateError || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to update link status');
+      }
 
       await logActivity('revoke_telegram', 'invite_link', link.id, {
         access_code: link.access_code,
@@ -417,19 +461,27 @@ export default function Links() {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || 'Failed to create new link');
 
-      // Update the database record with new link
-      const { error: updateError } = await supabase
-        .from('invite_links')
-        .update({ 
-          invite_link: data.invite_link,
-          status: 'active',
-          expires_at: data.expire_date 
-            ? new Date(data.expire_date * 1000).toISOString() 
-            : null,
-        })
-        .eq('id', link.id);
+      // Update the database record with new link via Edge Function
+      const { data: updateResponse, error: updateError } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: {
+            id: link.id,
+            updates: {
+              invite_link: data.invite_link,
+              status: 'active',
+              expires_at: data.expire_date 
+                ? new Date(data.expire_date * 1000).toISOString() 
+                : null,
+            }
+          }
+        }
+      });
 
-      if (updateError) throw updateError;
+      if (updateError || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to update link');
+      }
 
       await logActivity('regenerate_link', 'invite_link', link.id, {
         access_code: link.access_code,
@@ -450,8 +502,13 @@ export default function Links() {
 
   // Ban link - revoke on Telegram AND mark as BANNED in panel (blocks access code) AND remove revenue
   async function banLink(link: InviteLink) {
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
     try {
-      if (codeUser?.accessCode && link.group_id && link.invite_link) {
+      if (link.group_id && link.invite_link) {
         const { data: revokeData } = await supabase.functions.invoke('telegram-revoke', {
           body: { 
             adminCode: codeUser.accessCode,
@@ -467,20 +524,29 @@ export default function Links() {
         }
       }
 
-      // Delete associated revenue entries
+      // Delete associated revenue entries via Edge Function
       if (link.access_code) {
-        await supabase
-          .from('revenue')
-          .delete()
-          .eq('access_code', link.access_code);
+        await supabase.functions.invoke('data-api', {
+          body: {
+            code: codeUser.accessCode,
+            action: 'delete-revenue',
+            data: { accessCodeToDelete: link.access_code }
+          }
+        });
       }
 
-      const { error } = await supabase
-        .from('invite_links')
-        .update({ status: 'banned' })
-        .eq('id', link.id);
+      // Update status to banned via Edge Function
+      const { data: updateResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: { id: link.id, updates: { status: 'banned' } }
+        }
+      });
 
-      if (error) throw error;
+      if (error || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to ban link');
+      }
 
       await logActivity('ban_link', 'invite_link', link.id, {
         access_code: link.access_code,
@@ -488,7 +554,7 @@ export default function Links() {
         previous_status: link.status,
         revoked_on_telegram: true,
         revenue_deleted: true,
-      }, codeUser?.accessCode || 'unknown');
+      }, codeUser.accessCode);
 
       toast.success('User banned - access code blocked, revenue removed');
       setBanTarget(null);
@@ -500,19 +566,29 @@ export default function Links() {
 
   // Unban link - restore status to allow regeneration
   async function unbanLink(link: InviteLink) {
-    try {
-      const { error } = await supabase
-        .from('invite_links')
-        .update({ status: 'revoked' })
-        .eq('id', link.id);
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
 
-      if (error) throw error;
+    try {
+      const { data: updateResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: { id: link.id, updates: { status: 'revoked' } }
+        }
+      });
+
+      if (error || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to unban link');
+      }
 
       await logActivity('unban_link', 'invite_link', link.id, {
         access_code: link.access_code,
         group_name: link.group_name,
         previous_status: link.status,
-      }, codeUser?.accessCode || 'unknown');
+      }, codeUser.accessCode);
 
       toast.success('User unbanned - can now regenerate link');
       setUnbanTarget(null);
@@ -531,15 +607,23 @@ export default function Links() {
     setSubmittingTicket(true);
 
     try {
-      const { error } = await supabase.from('tickets').insert({
-        access_code: codeUser.accessCode,
-        subject: 'Account Deletion Request',
-        message: `Hello, my Telegram account was deleted and I need assistance to regain access to the group. My access code is: ${codeUser.accessCode}. Please help me resolve this issue.`,
-        priority: 'high',
-        status: 'open',
+      // Submit ticket via Edge Function
+      const { data: ticketResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'insert-ticket',
+          data: {
+            subject: 'Account Deletion Request',
+            message: `Hello, my Telegram account was deleted and I need assistance to regain access to the group. My access code is: ${codeUser.accessCode}. Please help me resolve this issue.`,
+            priority: 'high',
+            status: 'open',
+          }
+        }
       });
 
-      if (error) throw error;
+      if (error || !ticketResponse?.success) {
+        throw new Error(ticketResponse?.error || 'Failed to submit ticket');
+      }
 
       toast.success('Ticket submitted successfully! We will contact you soon.');
       setShowAccountDeletedDialog(false);
@@ -560,12 +644,6 @@ export default function Links() {
     // Get signed URL for existing receipt if present
     if (link.receipt_url && codeUser?.accessCode) {
       try {
-        const { data, error } = await supabase.functions.invoke('receipt-storage', {
-          body: { filePath: link.receipt_url, adminCode: codeUser.accessCode },
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
-        // Handle query param approach
         const response = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/receipt-storage?action=get-signed-url`,
           {
@@ -633,7 +711,7 @@ export default function Links() {
   }
 
   async function saveClientInfo() {
-    if (!editClientTarget) return;
+    if (!editClientTarget || !codeUser?.accessCode) return;
     
     setSavingClientInfo(true);
     
@@ -641,7 +719,7 @@ export default function Links() {
       let receiptUrl = editClientTarget.receipt_url;
 
       // Upload receipt via edge function if a new file was selected
-      if (receiptFile && codeUser?.accessCode) {
+      if (receiptFile) {
         setUploadingReceipt(true);
         
         const formData = new FormData();
@@ -668,17 +746,26 @@ export default function Links() {
         setUploadingReceipt(false);
       }
 
-      const { error } = await supabase
-        .from('invite_links')
-        .update({
-          client_email: clientEmail.trim() || null,
-          client_id: clientId.trim() || null,
-          note: clientNote.trim() || null,
-          receipt_url: receiptUrl,
-        })
-        .eq('id', editClientTarget.id);
+      // Update client info via Edge Function
+      const { data: updateResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: {
+            id: editClientTarget.id,
+            updates: {
+              client_email: clientEmail.trim() || null,
+              client_id: clientId.trim() || null,
+              note: clientNote.trim() || null,
+              receipt_url: receiptUrl,
+            }
+          }
+        }
+      });
 
-      if (error) throw error;
+      if (error || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to update client info');
+      }
 
       await logActivity('update_client_info', 'invite_link', editClientTarget.id, {
         access_code: editClientTarget.access_code,
@@ -686,7 +773,7 @@ export default function Links() {
         client_id: clientId.trim() || null,
         note: clientNote.trim() || null,
         receipt_uploaded: !!receiptFile,
-      }, codeUser?.accessCode || 'unknown');
+      }, codeUser.accessCode);
 
       toast.success('Client info updated');
       setEditClientTarget(null);
@@ -733,16 +820,7 @@ export default function Links() {
   });
 
   function getWelcomeMessage(link: InviteLink): string {
-    return `Welcome!
-
-Thanks for your purchase. Here are your access details:
-
-Group: ${link.invite_link}
-
-Dashboard: ${dashboardUrl}
-User Code: ${link.access_code}
-
-If you need support, access the dashboard and visit the Support section.`;
+    return `Welcome!\n\nThanks for your purchase. Here are your access details:\n\nGroup: ${link.invite_link}\n\nDashboard: ${dashboardUrl}\nUser Code: ${link.access_code}\n\nIf you need support, access the dashboard and visit the Support section.`;
   }
 
   function copyWelcomeMessage() {
@@ -975,10 +1053,10 @@ If you need support, access the dashboard and visit the Support section.`;
         <CardContent>
           <div className="flex gap-4">
             <Select value={selectedGroup} onValueChange={setSelectedGroup}>
-              <SelectTrigger className="w-64 bg-input">
+              <SelectTrigger className="w-[280px] bg-input">
                 <SelectValue placeholder="Select a group" />
               </SelectTrigger>
-              <SelectContent className="bg-popover border-border">
+              <SelectContent>
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name || group.id}
@@ -986,7 +1064,7 @@ If you need support, access the dashboard and visit the Support section.`;
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={openPriceDialog} disabled={generating} className="glow-sm">
+            <Button onClick={openPriceDialog} disabled={generating}>
               {generating ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
@@ -1413,7 +1491,7 @@ If you need support, access the dashboard and visit the Support section.`;
               {filteredActiveLinks.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
                   {activeLinks.length === 0 
-                    ? 'No active invite links. Generate your first one above!'
+                    ? 'No active invite links. Generate one above.'
                     : 'No links match your search.'}
                 </p>
               ) : (
@@ -1421,7 +1499,7 @@ If you need support, access the dashboard and visit the Support section.`;
                   {filteredActiveLinks.map((link) => (
                     <div
                       key={link.id}
-                      className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
+                      className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border hover:border-primary/30 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-1">
@@ -1478,20 +1556,6 @@ If you need support, access the dashboard and visit the Support section.`;
                         >
                           <UserCog className="w-4 h-4" />
                         </Button>
-                        {link.access_code && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setGeneratedLink(link);
-                              setShowWelcomeDialog(true);
-                              setCopied(false);
-                            }}
-                            title="Show welcome message"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                          </Button>
-                        )}
                         <Button
                           variant="ghost"
                           size="icon"
