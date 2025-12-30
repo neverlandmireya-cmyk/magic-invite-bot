@@ -56,23 +56,27 @@ export default function Support() {
   async function loadTickets() {
     setLoading(true);
     
-    let query = supabase
-      .from('tickets')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    // If user, only show their tickets
-    if (codeUser && !isAdmin) {
-      query = query.eq('access_code', codeUser.accessCode);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) {
-      console.error('Error loading tickets:', error);
-      toast.error('Failed to load tickets');
-    } else {
-      setTickets(data || []);
+    try {
+      let query = (supabase
+        .from('tickets') as any)
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      // If user, only show their tickets
+      if (codeUser && !isAdmin) {
+        query = query.eq('access_code', codeUser.accessCode);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('Error loading tickets:', error);
+        toast.error('Failed to load tickets');
+      } else {
+        setTickets((data as Ticket[]) || []);
+      }
+    } catch (err) {
+      console.error('Error:', err);
     }
     
     setLoading(false);
@@ -81,16 +85,20 @@ export default function Support() {
   async function loadReplies(ticketId: string) {
     setLoadingReplies(true);
     
-    const { data, error } = await supabase
-      .from('ticket_replies')
-      .select('*')
-      .eq('ticket_id', ticketId)
-      .order('created_at', { ascending: true });
-    
-    if (error) {
-      console.error('Error loading replies:', error);
-    } else {
-      setReplies(data || []);
+    try {
+      const { data, error } = await (supabase
+        .from('ticket_replies') as any)
+        .select('*')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        console.error('Error loading replies:', error);
+      } else {
+        setReplies((data as TicketReply[]) || []);
+      }
+    } catch (err) {
+      console.error('Error:', err);
     }
     
     setLoadingReplies(false);
@@ -109,8 +117,8 @@ export default function Support() {
 
     setCreating(true);
 
-    const { error } = await supabase
-      .from('tickets')
+    const { error } = await (supabase
+      .from('tickets') as any)
       .insert({
         access_code: codeUser.accessCode,
         subject: subject.trim(),
@@ -138,8 +146,8 @@ export default function Support() {
 
     setSendingReply(true);
 
-    const { error } = await supabase
-      .from('ticket_replies')
+    const { error } = await (supabase
+      .from('ticket_replies') as any)
       .insert({
         ticket_id: selectedTicket.id,
         message: replyMessage.trim(),
@@ -154,8 +162,8 @@ export default function Support() {
       loadReplies(selectedTicket.id);
       
       // Update ticket updated_at
-      await supabase
-        .from('tickets')
+      await (supabase
+        .from('tickets') as any)
         .update({ updated_at: new Date().toISOString() })
         .eq('id', selectedTicket.id);
     }
@@ -164,8 +172,8 @@ export default function Support() {
   }
 
   async function updateTicketStatus(ticketId: string, status: string) {
-    const { error } = await supabase
-      .from('tickets')
+    const { error } = await (supabase
+      .from('tickets') as any)
       .update({ status })
       .eq('id', ticketId);
 
@@ -324,9 +332,9 @@ export default function Support() {
     <div className="space-y-8 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Support</h1>
+          <h1 className="text-3xl font-bold text-foreground">Ticket</h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? 'Manage support tickets' : 'Get help with your access'}
+            {isAdmin ? 'Manage tickets' : 'Get help with your access'}
           </p>
         </div>
         <div className="flex gap-2">
