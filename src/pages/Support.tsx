@@ -50,7 +50,10 @@ export default function Support() {
   const [sendingReply, setSendingReply] = useState(false);
 
   useEffect(() => {
-    loadTickets();
+    // Only load tickets when we have a valid user (admin or regular user with access code)
+    if (codeUser) {
+      loadTickets();
+    }
   }, [codeUser, isAdmin]);
 
   async function loadTickets() {
