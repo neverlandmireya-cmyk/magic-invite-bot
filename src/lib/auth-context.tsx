@@ -30,69 +30,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedCodeUser = localStorage.getItem(CODE_USER_KEY);
     if (storedCodeUser) {
       try {
-        setCodeUser(JSON.parse(storedCodeUser));
+        const parsed = JSON.parse(storedCodeUser);
+        // Validate stored session server-side
+        validateStoredSession(parsed);
       } catch {
         localStorage.removeItem(CODE_USER_KEY);
+        setLoading(false);
       }
+    } else {
+      setLoading(false);
+    }
+  }, []);
+
+  const validateStoredSession = async (stored: CodeUser) => {
+    try {
+      // Re-verify the code server-side to ensure it's still valid
+      const { data, error } = await supabase.functions.invoke('verify-code', {
+        body: { code: stored.accessCode }
+      });
+
+      if (error || !data?.success) {
+        // Session is no longer valid
+        localStorage.removeItem(CODE_USER_KEY);
+        setCodeUser(null);
+      } else {
+        // Session is valid, update with server data
+        const newCodeUser: CodeUser = data.data;
+        localStorage.setItem(CODE_USER_KEY, JSON.stringify(newCodeUser));
+        setCodeUser(newCodeUser);
+      }
+    } catch {
+      // On error, keep stored session but don't trust it fully
+      localStorage.removeItem(CODE_USER_KEY);
+      setCodeUser(null);
     }
     setLoading(false);
-  }, []);
+  };
 
   const signInWithCode = async (code: string) => {
     try {
+      // Validate code format client-side first
       const trimmedCode = code.trim().toUpperCase();
-
-      // Check if it's an admin code
-      const { data: adminData, error: adminError } = await supabase
-        .from('admin_codes')
-        .select('id, code, name, is_active')
-        .eq('code', trimmedCode)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (adminData) {
-        // Update last_used_at
-        await supabase
-          .from('admin_codes')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('id', adminData.id);
-
-        const codeUserData: CodeUser = {
-          accessCode: trimmedCode,
-          adminId: adminData.id,
-          adminName: adminData.name,
-          isAdmin: true,
-        };
-        localStorage.setItem(CODE_USER_KEY, JSON.stringify(codeUserData));
-        setCodeUser(codeUserData);
-        return { error: null };
+      
+      if (trimmedCode.length < 6 || trimmedCode.length > 20) {
+        return { error: new Error('Invalid code format') };
       }
 
-      // Check if it's a user invite link code
-      const { data: linkData, error: linkError } = await supabase
-        .from('invite_links')
-        .select('id, access_code')
-        .eq('access_code', trimmedCode)
-        .maybeSingle();
+      if (!/^[A-Z0-9]+$/.test(trimmedCode)) {
+        return { error: new Error('Invalid code format') };
+      }
 
-      if (linkError) {
+      // Verify code server-side via Edge Function
+      const { data, error } = await supabase.functions.invoke('verify-code', {
+        body: { code: trimmedCode }
+      });
+
+      if (error) {
         return { error: new Error('Failed to verify code') };
       }
 
-      if (!linkData) {
-        return { error: new Error('Invalid access code') };
+      if (!data?.success) {
+        return { error: new Error(data?.error || 'Invalid access code') };
       }
 
-      const codeUserData: CodeUser = {
-        accessCode: linkData.access_code!,
-        linkId: linkData.id,
-        isAdmin: false,
-      };
-      
+      const codeUserData: CodeUser = data.data;
       localStorage.setItem(CODE_USER_KEY, JSON.stringify(codeUserData));
       setCodeUser(codeUserData);
-
       return { error: null };
+
     } catch (err) {
       return { error: err as Error };
     }

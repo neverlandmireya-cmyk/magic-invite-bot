@@ -74,13 +74,19 @@ export default function Links() {
     // Admin flow - load settings and all links
     const { data: settings } = await supabase
       .from('settings')
-      .select('key, value');
+      .select('key, value')
+      .in('key', ['group_ids']); // Only fetch group_ids, not bot_token (it's now server-only)
 
     if (settings) {
       const groupIdsSetting = settings.find(s => s.key === 'group_ids');
-      const botToken = settings.find(s => s.key === 'bot_token');
       
-      if (groupIdsSetting?.value && botToken?.value) {
+      // Check if bot token is configured (without exposing it)
+      const { count } = await supabase
+        .from('settings')
+        .select('*', { count: 'exact', head: true })
+        .eq('key', 'bot_token');
+      
+      if (groupIdsSetting?.value && count && count > 0) {
         setHasSettings(true);
         try {
           const parsedGroups = JSON.parse(groupIdsSetting.value);
@@ -112,59 +118,50 @@ export default function Links() {
       return;
     }
 
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
     setGenerating(true);
 
     try {
-      const { data: settings } = await supabase
-        .from('settings')
-        .select('key, value');
+      // Call Edge Function instead of Telegram API directly
+      const { data, error } = await supabase.functions.invoke('telegram-invite', {
+        body: { 
+          adminCode: codeUser.accessCode,
+          groupId: selectedGroup,
+          memberLimit: 1 
+        }
+      });
 
-      const botToken = settings?.find(s => s.key === 'bot_token')?.value;
-
-      if (!botToken) {
-        toast.error('Bot token not configured');
-        setGenerating(false);
-        return;
+      if (error) {
+        throw new Error('Failed to create invite link');
       }
 
-      const response = await fetch(
-        `https://api.telegram.org/bot${botToken}/createChatInviteLink`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: selectedGroup,
-            member_limit: 1,
-            creates_join_request: false,
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (!result.ok) {
-        throw new Error(result.description || 'Failed to create invite link');
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to create invite link');
       }
 
       const accessCode = generateAccessCode();
       const selectedGroupData = groups.find(g => g.id === selectedGroup);
 
-      const { data: insertedLink, error } = await supabase
+      const { data: insertedLink, error: insertError } = await supabase
         .from('invite_links')
         .insert({
           group_id: selectedGroup,
           group_name: selectedGroupData?.name || null,
-          invite_link: result.result.invite_link,
+          invite_link: data.invite_link,
           status: 'active',
           access_code: accessCode,
-          expires_at: result.result.expire_date 
-            ? new Date(result.result.expire_date * 1000).toISOString() 
+          expires_at: data.expire_date 
+            ? new Date(data.expire_date * 1000).toISOString() 
             : null,
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (insertError) throw insertError;
 
       // Show welcome message dialog
       setGeneratedLink(insertedLink);

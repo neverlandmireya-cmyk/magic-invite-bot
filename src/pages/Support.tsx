@@ -11,6 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { Plus, Loader2, MessageSquare, Send, ArrowLeft, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { z } from 'zod';
+
+// Input validation schemas
+const ticketSchema = z.object({
+  subject: z.string().trim().min(3, 'Subject must be at least 3 characters').max(200, 'Subject must be less than 200 characters'),
+  message: z.string().trim().min(10, 'Message must be at least 10 characters').max(5000, 'Message must be less than 5000 characters'),
+});
+
+const replySchema = z.object({
+  message: z.string().trim().min(1, 'Reply cannot be empty').max(5000, 'Reply must be less than 5000 characters'),
+});
 
 interface Ticket {
   id: string;
@@ -44,9 +55,11 @@ export default function Support() {
   // New ticket form
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [formErrors, setFormErrors] = useState<{ subject?: string; message?: string }>({});
   
   // Reply form
   const [replyMessage, setReplyMessage] = useState('');
+  const [replyError, setReplyError] = useState<string | null>(null);
   const [sendingReply, setSendingReply] = useState(false);
 
   useEffect(() => {
@@ -108,10 +121,20 @@ export default function Support() {
   }
 
   async function createTicket() {
-    if (!subject.trim() || !message.trim()) {
-      toast.error('Please fill in all fields');
+    // Validate input
+    const result = ticketSchema.safeParse({ subject, message });
+    
+    if (!result.success) {
+      const errors: { subject?: string; message?: string } = {};
+      result.error.errors.forEach(err => {
+        if (err.path[0] === 'subject') errors.subject = err.message;
+        if (err.path[0] === 'message') errors.message = err.message;
+      });
+      setFormErrors(errors);
       return;
     }
+    
+    setFormErrors({});
 
     if (!codeUser) {
       toast.error('You must be logged in');
@@ -124,8 +147,8 @@ export default function Support() {
       .from('tickets') as any)
       .insert({
         access_code: codeUser.accessCode,
-        subject: subject.trim(),
-        message: message.trim(),
+        subject: result.data.subject,
+        message: result.data.message,
         status: 'open',
         priority: 'normal',
       });
@@ -145,7 +168,17 @@ export default function Support() {
   }
 
   async function sendReply() {
-    if (!replyMessage.trim() || !selectedTicket) return;
+    // Validate input
+    const result = replySchema.safeParse({ message: replyMessage });
+    
+    if (!result.success) {
+      setReplyError(result.error.errors[0].message);
+      return;
+    }
+    
+    setReplyError(null);
+    
+    if (!selectedTicket) return;
 
     setSendingReply(true);
 
@@ -153,7 +186,7 @@ export default function Support() {
       .from('ticket_replies') as any)
       .insert({
         ticket_id: selectedTicket.id,
-        message: replyMessage.trim(),
+        message: result.data.message,
         is_admin: isAdmin,
       });
 
@@ -310,12 +343,21 @@ export default function Support() {
           <Card className="glass">
             <CardContent className="pt-6">
               <div className="flex gap-3">
-                <Textarea
-                  placeholder="Type your reply..."
-                  value={replyMessage}
-                  onChange={(e) => setReplyMessage(e.target.value)}
-                  className="flex-1 bg-input min-h-[80px]"
-                />
+                <div className="flex-1">
+                  <Textarea
+                    placeholder="Type your reply..."
+                    value={replyMessage}
+                    onChange={(e) => {
+                      setReplyMessage(e.target.value);
+                      setReplyError(null);
+                    }}
+                    className={`bg-input min-h-[80px] ${replyError ? 'border-destructive' : ''}`}
+                    maxLength={5000}
+                  />
+                  {replyError && (
+                    <p className="text-sm text-destructive mt-1">{replyError}</p>
+                  )}
+                </div>
                 <Button 
                   onClick={sendReply} 
                   disabled={sendingReply || !replyMessage.trim()}
@@ -354,7 +396,12 @@ export default function Support() {
       </div>
 
       {/* New Ticket Dialog */}
-      <Dialog open={showNewTicket} onOpenChange={setShowNewTicket}>
+      <Dialog open={showNewTicket} onOpenChange={(open) => {
+        setShowNewTicket(open);
+        if (!open) {
+          setFormErrors({});
+        }
+      }}>
         <DialogContent className="glass">
           <DialogHeader>
             <DialogTitle>Create New Ticket</DialogTitle>
@@ -365,17 +412,31 @@ export default function Support() {
               <Input
                 placeholder="Subject"
                 value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="bg-input"
+                onChange={(e) => {
+                  setSubject(e.target.value);
+                  if (formErrors.subject) setFormErrors(prev => ({ ...prev, subject: undefined }));
+                }}
+                className={`bg-input ${formErrors.subject ? 'border-destructive' : ''}`}
+                maxLength={200}
               />
+              {formErrors.subject && (
+                <p className="text-sm text-destructive mt-1">{formErrors.subject}</p>
+              )}
             </div>
             <div>
               <Textarea
                 placeholder="Describe your issue..."
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                className="bg-input min-h-[150px]"
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  if (formErrors.message) setFormErrors(prev => ({ ...prev, message: undefined }));
+                }}
+                className={`bg-input min-h-[150px] ${formErrors.message ? 'border-destructive' : ''}`}
+                maxLength={5000}
               />
+              {formErrors.message && (
+                <p className="text-sm text-destructive mt-1">{formErrors.message}</p>
+              )}
             </div>
             <div className="flex gap-2">
               <Button onClick={createTicket} disabled={creating} className="flex-1 glow-sm">
