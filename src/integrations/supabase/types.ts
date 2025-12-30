@@ -110,6 +110,44 @@ export type Database = {
         }
         Relationships: []
       }
+      revenue: {
+        Row: {
+          access_code: string
+          amount: number
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          link_id: string | null
+        }
+        Insert: {
+          access_code: string
+          amount: number
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          link_id?: string | null
+        }
+        Update: {
+          access_code?: string
+          amount?: number
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          link_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "revenue_link_id_fkey"
+            columns: ["link_id"]
+            isOneToOne: false
+            referencedRelation: "invite_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       settings: {
         Row: {
           created_at: string | null
