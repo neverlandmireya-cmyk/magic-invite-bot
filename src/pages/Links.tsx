@@ -255,9 +255,28 @@ export default function Links() {
     setGenerating(false);
   }
 
-  // Delete user permanently (removes from panel and all records)
+  // Delete user permanently (revokes Telegram link, removes revenue, removes from panel)
   async function deleteUserPermanently(link: InviteLink) {
     try {
+      // First, revoke the link on Telegram
+      if (codeUser?.accessCode && link.group_id && link.invite_link) {
+        await supabase.functions.invoke('telegram-revoke', {
+          body: { 
+            adminCode: codeUser.accessCode,
+            groupId: link.group_id,
+            inviteLink: link.invite_link
+          }
+        });
+      }
+
+      // Delete associated revenue entries
+      if (link.access_code) {
+        await supabase
+          .from('revenue')
+          .delete()
+          .eq('access_code', link.access_code);
+      }
+
       // Delete the link record
       const { error } = await supabase
         .from('invite_links')
@@ -270,9 +289,11 @@ export default function Links() {
         access_code: link.access_code,
         group_name: link.group_name,
         action: 'permanent_deletion',
+        telegram_revoked: true,
+        revenue_deleted: true,
       }, codeUser?.accessCode || 'unknown');
 
-      toast.success('User deleted permanently');
+      toast.success('User deleted permanently (Telegram link revoked, revenue removed)');
       setDeleteUserTarget(null);
       loadData();
     } catch (error: any) {
