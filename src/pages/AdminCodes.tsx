@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,6 +38,7 @@ function generateCode(length: number = 10): string {
 }
 
 export default function AdminCodes() {
+  const { codeUser } = useAuth();
   const [admins, setAdmins] = useState<AdminCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCodes, setShowCodes] = useState<Record<string, boolean>>({});
@@ -50,17 +52,28 @@ export default function AdminCodes() {
 
   useEffect(() => {
     loadAdmins();
-  }, []);
+  }, [codeUser]);
 
   async function loadAdmins() {
-    const { data, error } = await supabase
-      .from('admin_codes')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (data) {
-      setAdmins(data);
+    if (!codeUser?.accessCode) {
+      setLoading(false);
+      return;
     }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('data-api', {
+        body: { code: codeUser.accessCode, action: 'get-admin-codes' }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setAdmins(data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load admins:', error);
+    }
+
     setLoading(false);
   }
 
@@ -90,18 +103,21 @@ export default function AdminCodes() {
     setCreating(true);
 
     try {
-      const { error } = await supabase
-        .from('admin_codes')
-        .insert({
-          name: result.data.name,
-          code: result.data.code,
-        });
+      const { data, error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser?.accessCode, 
+          action: 'insert-admin-code',
+          data: { name: result.data.name, code: result.data.code }
+        }
+      });
 
-      if (error) {
-        if (error.code === '23505') {
+      if (error) throw error;
+
+      if (data?.error) {
+        if (data.code === '23505') {
           setFormErrors({ code: 'This code already exists. Generate a new one.' });
         } else {
-          throw error;
+          throw new Error(data.error);
         }
       } else {
         toast.success(`Admin "${result.data.name}" created!`);
@@ -119,10 +135,15 @@ export default function AdminCodes() {
 
   const toggleActive = async (admin: AdminCode) => {
     try {
-      await supabase
-        .from('admin_codes')
-        .update({ is_active: !admin.is_active })
-        .eq('id', admin.id);
+      const { error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser?.accessCode, 
+          action: 'update-admin-code',
+          data: { id: admin.id, updates: { is_active: !admin.is_active } }
+        }
+      });
+
+      if (error) throw error;
 
       toast.success(admin.is_active ? 'Admin deactivated' : 'Admin activated');
       loadAdmins();
@@ -138,10 +159,15 @@ export default function AdminCodes() {
     }
 
     try {
-      await supabase
-        .from('admin_codes')
-        .delete()
-        .eq('id', admin.id);
+      const { error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser?.accessCode, 
+          action: 'delete-admin-code',
+          data: { id: admin.id }
+        }
+      });
+
+      if (error) throw error;
 
       toast.success(`Admin "${admin.name}" deleted`);
       loadAdmins();

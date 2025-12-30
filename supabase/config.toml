@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.receipt-storage]
 verify_jwt = false
+
+[functions.data-api]
+verify_jwt = false

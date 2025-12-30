@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 import { Activity, UserPlus, UserMinus, ShieldOff, RefreshCw, Filter, Search } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,40 +30,44 @@ interface ActivityLog {
 }
 
 export default function ActivityLogs() {
+  const { codeUser } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'member_joined' | 'member_left' | 'auto_revoke_on_leave'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   async function fetchLogs() {
+    if (!codeUser?.accessCode) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     
-    let query = supabase
-      .from('activity_logs')
-      .select('*')
-      .in('action', ['member_joined', 'member_left', 'auto_revoke_on_leave'])
-      .order('created_at', { ascending: false })
-      .limit(100);
+    try {
+      const { data, error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'get-activity-logs',
+          data: { filter }
+        }
+      });
 
-    if (filter !== 'all') {
-      query = supabase
-        .from('activity_logs')
-        .select('*')
-        .eq('action', filter)
-        .order('created_at', { ascending: false })
-        .limit(100);
+      if (error) throw error;
+
+      if (data?.success) {
+        setLogs(data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch logs:', error);
     }
 
-    const { data } = await query;
-    if (data) {
-      setLogs(data as ActivityLog[]);
-    }
     setLoading(false);
   }
 
   useEffect(() => {
     fetchLogs();
-  }, [filter]);
+  }, [filter, codeUser]);
 
   function getActivityIcon(action: string) {
     switch (action) {
