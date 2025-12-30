@@ -12,16 +12,20 @@ import Links from "./pages/Links";
 import AdminCodes from "./pages/AdminCodes";
 import Support from "./pages/Support";
 import ActivityLogs from "./pages/ActivityLogs";
+import Resellers from "./pages/Resellers";
+import ResellerDashboard from "./pages/ResellerDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 function AuthRedirect() {
-  const { loading, codeUser, isAdmin } = useAuth();
+  const { loading, codeUser, isAdmin, isReseller } = useAuth();
   
   if (loading) return null;
   if (codeUser) {
-    return <Navigate to={isAdmin ? "/" : "/links"} replace />;
+    if (isAdmin) return <Navigate to="/" replace />;
+    if (isReseller) return <Navigate to="/reseller" replace />;
+    return <Navigate to="/links" replace />;
   }
   return <Auth />;
 }
@@ -42,6 +46,8 @@ const App = () => (
               <Route path="/admin-codes" element={<AdminCodes />} />
               <Route path="/support" element={<Support />} />
               <Route path="/activity" element={<ActivityLogs />} />
+              <Route path="/resellers" element={<Resellers />} />
+              <Route path="/reseller" element={<ResellerDashboard />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

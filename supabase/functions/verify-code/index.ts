@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     }
 
     // Check if it's an admin code
-    const { data: adminData, error: adminError } = await supabase
+    const { data: adminData } = await supabase
       .from('admin_codes')
       .select('id, code, name, is_active')
       .eq('code', trimmedCode)
@@ -69,6 +69,53 @@ Deno.serve(async (req) => {
             adminId: adminData.id,
             adminName: adminData.name,
             isAdmin: true,
+            isReseller: false,
+          }
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check if it's a reseller code
+    const { data: resellerData } = await supabase
+      .from('resellers')
+      .select('id, code, name, credits, group_id, group_name, is_active')
+      .eq('code', trimmedCode)
+      .maybeSingle();
+
+    if (resellerData) {
+      if (!resellerData.is_active) {
+        console.log('Inactive reseller attempted login:', trimmedCode);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "This reseller account is inactive",
+            isBanned: true
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Update last_used_at
+      await supabase
+        .from('resellers')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', resellerData.id);
+
+      console.log('Reseller login successful:', resellerData.name);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          type: 'reseller',
+          data: {
+            accessCode: trimmedCode,
+            resellerId: resellerData.id,
+            resellerName: resellerData.name,
+            credits: resellerData.credits,
+            groupId: resellerData.group_id,
+            groupName: resellerData.group_name,
+            isAdmin: false,
+            isReseller: true,
           }
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -113,6 +160,7 @@ Deno.serve(async (req) => {
             accessCode: linkData.access_code,
             linkId: linkData.id,
             isAdmin: false,
+            isReseller: false,
           }
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -11,8 +11,22 @@ interface RequestBody {
   data?: Record<string, unknown>;
 }
 
+interface AuthResult {
+  success: boolean;
+  isAdmin: boolean;
+  isReseller: boolean;
+  accessCode: string;
+  adminId?: string;
+  resellerId?: string;
+  resellerGroupId?: string;
+  resellerCredits?: number;
+  linkId?: string;
+  error?: string;
+  isBanned?: boolean;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function verifyCode(supabase: any, code: string) {
+async function verifyCode(supabase: any, code: string): Promise<AuthResult> {
   const trimmedCode = code.trim().toUpperCase();
 
   // Check admin codes
@@ -24,7 +38,29 @@ async function verifyCode(supabase: any, code: string) {
     .maybeSingle();
 
   if (adminData) {
-    return { success: true, isAdmin: true, accessCode: trimmedCode, adminId: adminData.id };
+    return { success: true, isAdmin: true, isReseller: false, accessCode: trimmedCode, adminId: adminData.id };
+  }
+
+  // Check reseller codes
+  const { data: resellerData } = await supabase
+    .from('resellers')
+    .select('id, code, name, credits, group_id, is_active')
+    .eq('code', trimmedCode)
+    .maybeSingle();
+
+  if (resellerData) {
+    if (!resellerData.is_active) {
+      return { success: false, isAdmin: false, isReseller: false, accessCode: trimmedCode, error: 'Reseller is inactive', isBanned: true };
+    }
+    return { 
+      success: true, 
+      isAdmin: false, 
+      isReseller: true, 
+      accessCode: trimmedCode, 
+      resellerId: resellerData.id,
+      resellerGroupId: resellerData.group_id,
+      resellerCredits: resellerData.credits
+    };
   }
 
   // Check user codes
@@ -36,12 +72,12 @@ async function verifyCode(supabase: any, code: string) {
 
   if (linkData) {
     if (linkData.status === 'banned') {
-      return { success: false, error: 'User is banned', isBanned: true };
+      return { success: false, isAdmin: false, isReseller: false, accessCode: trimmedCode, error: 'User is banned', isBanned: true };
     }
-    return { success: true, isAdmin: false, accessCode: trimmedCode, linkId: linkData.id };
+    return { success: true, isAdmin: false, isReseller: false, accessCode: trimmedCode, linkId: linkData.id };
   }
 
-  return { success: false, error: 'Invalid code' };
+  return { success: false, isAdmin: false, isReseller: false, accessCode: trimmedCode, error: 'Invalid code' };
 }
 
 Deno.serve(async (req) => {
@@ -75,7 +111,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { isAdmin, accessCode } = auth;
+    const { isAdmin, isReseller, accessCode, resellerGroupId, resellerId } = auth;
 
     // Route actions
     switch (action) {
@@ -120,11 +156,58 @@ Deno.serve(async (req) => {
         );
       }
 
+      // ============ RESELLER DASHBOARD ============
+      case 'get-reseller-dashboard': {
+        if (!isReseller) {
+          return new Response(
+            JSON.stringify({ error: "Reseller access required" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Get reseller's links
+        const { data: linksData } = await supabase
+          .from('invite_links')
+          .select('status')
+          .eq('reseller_code', accessCode);
+
+        const stats = { total: 0, active: 0, used: 0, expired: 0 };
+        if (linksData) {
+          linksData.forEach((link: { status: string }) => {
+            stats.total++;
+            if (link.status === 'active') stats.active++;
+            else if (link.status === 'used') stats.used++;
+            else if (link.status === 'expired') stats.expired++;
+          });
+        }
+
+        // Get reseller info for credits
+        const { data: resellerInfo } = await supabase
+          .from('resellers')
+          .select('credits, group_name')
+          .eq('code', accessCode)
+          .single();
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            stats, 
+            credits: resellerInfo?.credits || 0,
+            groupName: resellerInfo?.group_name || ''
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       // ============ GET LINKS ============
       case 'get-links': {
         let query = supabase.from('invite_links').select('*').order('created_at', { ascending: false });
 
-        if (!isAdmin) {
+        if (isReseller) {
+          // Resellers only see their own links
+          query = query.eq('reseller_code', accessCode);
+        } else if (!isAdmin) {
+          // Regular users only see their own link
           query = query.eq('access_code', accessCode);
         }
 
@@ -203,14 +286,37 @@ Deno.serve(async (req) => {
 
       // ============ INSERT LINK ============
       case 'insert-link': {
-        if (!isAdmin) {
+        // Allow admin or reseller to insert links
+        if (!isAdmin && !isReseller) {
           return new Response(
-            JSON.stringify({ error: "Admin access required" }),
+            JSON.stringify({ error: "Admin or reseller access required" }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
         const linkData = data as Record<string, unknown>;
+
+        // If reseller, add reseller_code and enforce group
+        if (isReseller) {
+          linkData.reseller_code = accessCode;
+          linkData.group_id = resellerGroupId;
+          
+          // Check credits
+          const { data: resellerInfo } = await supabase
+            .from('resellers')
+            .select('credits, group_name')
+            .eq('id', resellerId)
+            .single();
+
+          if (!resellerInfo || resellerInfo.credits < 1) {
+            return new Response(
+              JSON.stringify({ error: "Insufficient credits" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          linkData.group_name = resellerInfo.group_name;
+        }
 
         const { data: insertedLink, error } = await supabase
           .from('invite_links')
@@ -223,6 +329,25 @@ Deno.serve(async (req) => {
             JSON.stringify({ error: error.message }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
+        }
+
+        // Deduct credit from reseller
+        if (isReseller) {
+          await supabase.rpc('decrement_reseller_credits', { reseller_id: resellerId });
+          
+          // Fallback if RPC doesn't exist - use direct update
+          const { data: currentReseller } = await supabase
+            .from('resellers')
+            .select('credits')
+            .eq('id', resellerId)
+            .single();
+          
+          if (currentReseller) {
+            await supabase
+              .from('resellers')
+              .update({ credits: Math.max(0, currentReseller.credits - 1) })
+              .eq('id', resellerId);
+          }
         }
 
         return new Response(
@@ -318,22 +443,27 @@ Deno.serve(async (req) => {
 
       // ============ ACTIVITY LOGS ============
       case 'get-activity-logs': {
-        if (!isAdmin) {
+        // Admin sees all, reseller sees their own
+        if (!isAdmin && !isReseller) {
           return new Response(
-            JSON.stringify({ error: "Admin access required" }),
+            JSON.stringify({ error: "Access denied" }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
         const filter = (data?.filter || 'all') as string;
+        let query;
 
-        let query = supabase
-          .from('activity_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-        if (filter !== 'all') {
+        if (isReseller) {
+          // Reseller only sees logs for their links
+          query = supabase
+            .from('activity_logs')
+            .select('*')
+            .eq('reseller_code', accessCode)
+            .in('action', ['member_joined', 'member_left', 'auto_revoke_on_leave'])
+            .order('created_at', { ascending: false })
+            .limit(100);
+        } else if (filter !== 'all') {
           query = supabase
             .from('activity_logs')
             .select('*')
@@ -366,6 +496,11 @@ Deno.serve(async (req) => {
 
       case 'insert-activity-log': {
         const logData = data as Record<string, unknown>;
+
+        // If reseller, add reseller_code
+        if (isReseller) {
+          logData.reseller_code = accessCode;
+        }
 
         const { error } = await supabase
           .from('activity_logs')
@@ -494,6 +629,158 @@ Deno.serve(async (req) => {
         );
       }
 
+      // ============ RESELLERS MANAGEMENT ============
+      case 'get-resellers': {
+        if (!isAdmin) {
+          return new Response(
+            JSON.stringify({ error: "Admin access required" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { data: resellersData, error } = await supabase
+          .from('resellers')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, data: resellersData }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      case 'insert-reseller': {
+        if (!isAdmin) {
+          return new Response(
+            JSON.stringify({ error: "Admin access required" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const resellerData = data as Record<string, unknown>;
+
+        const { error } = await supabase
+          .from('resellers')
+          .insert(resellerData);
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message, code: error.code }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      case 'update-reseller': {
+        if (!isAdmin) {
+          return new Response(
+            JSON.stringify({ error: "Admin access required" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { id, updates } = data as { id: string; updates: Record<string, unknown> };
+
+        const { error } = await supabase
+          .from('resellers')
+          .update(updates)
+          .eq('id', id);
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      case 'delete-reseller': {
+        if (!isAdmin) {
+          return new Response(
+            JSON.stringify({ error: "Admin access required" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { id } = data as { id: string };
+
+        const { error } = await supabase
+          .from('resellers')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      case 'add-reseller-credits': {
+        if (!isAdmin) {
+          return new Response(
+            JSON.stringify({ error: "Admin access required" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { id, amount } = data as { id: string; amount: number };
+
+        // Get current credits
+        const { data: reseller } = await supabase
+          .from('resellers')
+          .select('credits')
+          .eq('id', id)
+          .single();
+
+        if (!reseller) {
+          return new Response(
+            JSON.stringify({ error: "Reseller not found" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { error } = await supabase
+          .from('resellers')
+          .update({ credits: reseller.credits + amount })
+          .eq('id', id);
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, newCredits: reseller.credits + amount }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       // ============ TICKETS ============
       case 'get-tickets': {
         let query = supabase
@@ -501,7 +788,10 @@ Deno.serve(async (req) => {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!isAdmin) {
+        if (isReseller) {
+          // Resellers only see tickets from their users
+          query = query.eq('reseller_code', accessCode);
+        } else if (!isAdmin) {
           query = query.eq('access_code', accessCode);
         }
 
@@ -522,6 +812,11 @@ Deno.serve(async (req) => {
 
       case 'insert-ticket': {
         const ticketData = data as Record<string, unknown>;
+
+        // If reseller, add reseller_code
+        if (isReseller) {
+          ticketData.reseller_code = accessCode;
+        }
 
         const { error } = await supabase
           .from('tickets')
@@ -546,15 +841,23 @@ Deno.serve(async (req) => {
       case 'update-ticket': {
         const { id, updates } = data as { id: string; updates: Record<string, unknown> };
 
-        // Non-admins can only update their own tickets
+        // Non-admins and non-resellers can only update their own tickets
         if (!isAdmin) {
           const { data: ticket } = await supabase
             .from('tickets')
-            .select('access_code')
+            .select('access_code, reseller_code')
             .eq('id', id)
             .single();
 
-          if (ticket?.access_code !== accessCode) {
+          if (isReseller) {
+            // Resellers can update tickets from their users
+            if (ticket?.reseller_code !== accessCode) {
+              return new Response(
+                JSON.stringify({ error: "Unauthorized" }),
+                { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          } else if (ticket?.access_code !== accessCode) {
             return new Response(
               JSON.stringify({ error: "Unauthorized" }),
               { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -584,15 +887,22 @@ Deno.serve(async (req) => {
       case 'get-ticket-replies': {
         const { ticketId } = data as { ticketId: string };
 
-        // Verify ticket access for non-admins
+        // Verify ticket access
         if (!isAdmin) {
           const { data: ticket } = await supabase
             .from('tickets')
-            .select('access_code')
+            .select('access_code, reseller_code')
             .eq('id', ticketId)
             .single();
 
-          if (ticket?.access_code !== accessCode) {
+          if (isReseller) {
+            if (ticket?.reseller_code !== accessCode) {
+              return new Response(
+                JSON.stringify({ error: "Unauthorized" }),
+                { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          } else if (ticket?.access_code !== accessCode) {
             return new Response(
               JSON.stringify({ error: "Unauthorized" }),
               { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -622,15 +932,22 @@ Deno.serve(async (req) => {
       case 'insert-ticket-reply': {
         const { ticketId, message } = data as { ticketId: string; message: string };
 
-        // Verify ticket access for non-admins
+        // Verify ticket access
         if (!isAdmin) {
           const { data: ticket } = await supabase
             .from('tickets')
-            .select('access_code')
+            .select('access_code, reseller_code')
             .eq('id', ticketId)
             .single();
 
-          if (ticket?.access_code !== accessCode) {
+          if (isReseller) {
+            if (ticket?.reseller_code !== accessCode) {
+              return new Response(
+                JSON.stringify({ error: "Unauthorized" }),
+                { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          } else if (ticket?.access_code !== accessCode) {
             return new Response(
               JSON.stringify({ error: "Unauthorized" }),
               { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -643,7 +960,7 @@ Deno.serve(async (req) => {
           .insert({
             ticket_id: ticketId,
             message,
-            is_admin: isAdmin,
+            is_admin: isAdmin || isReseller, // Reseller replies show as admin too
           });
 
         if (error) {
