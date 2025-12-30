@@ -64,8 +64,8 @@ export default function Dashboard() {
     { label: 'Expired', value: stats.expired, icon: XCircle, color: 'text-muted-foreground' },
   ];
 
-  // Redirect non-admins after hooks
-  if (!authLoading && !isAdmin) {
+  // Redirect non-admins after hooks - wait for auth AND codeUser to be resolved
+  if (!authLoading && codeUser && !isAdmin) {
     if (isReseller) {
       return <Navigate to="/reseller" replace />;
     }
