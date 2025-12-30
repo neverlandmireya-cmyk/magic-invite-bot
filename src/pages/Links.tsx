@@ -4,9 +4,11 @@ import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, Key } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, Key, MessageSquare, Check } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface InviteLink {
@@ -39,7 +41,13 @@ export default function Links() {
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasSettings, setHasSettings] = useState(false);
-  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  
+  // Welcome message dialog
+  const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
+  const [generatedLink, setGeneratedLink] = useState<InviteLink | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const dashboardUrl = window.location.origin;
 
   useEffect(() => {
     loadData();
@@ -105,7 +113,6 @@ export default function Links() {
     }
 
     setGenerating(true);
-    setGeneratedCode(null);
 
     try {
       const { data: settings } = await supabase
@@ -139,28 +146,32 @@ export default function Links() {
         throw new Error(result.description || 'Failed to create invite link');
       }
 
-      // Generate unique access code
       const accessCode = generateAccessCode();
       const selectedGroupData = groups.find(g => g.id === selectedGroup);
 
-      const { error } = await supabase
+      const { data: insertedLink, error } = await supabase
         .from('invite_links')
         .insert({
           group_id: selectedGroup,
           group_name: selectedGroupData?.name || null,
           invite_link: result.result.invite_link,
           status: 'active',
-          created_by: null,
           access_code: accessCode,
           expires_at: result.result.expire_date 
             ? new Date(result.result.expire_date * 1000).toISOString() 
             : null,
-        });
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
-      setGeneratedCode(accessCode);
-      toast.success('Invite link generated with access code!');
+      // Show welcome message dialog
+      setGeneratedLink(insertedLink);
+      setShowWelcomeDialog(true);
+      setCopied(false);
+      
+      toast.success('Invite link generated!');
       loadData();
     } catch (error: any) {
       toast.error(error.message || 'Failed to generate link');
@@ -169,17 +180,40 @@ export default function Links() {
     setGenerating(false);
   }
 
-  function copyText(text: string, label: string = 'Link') {
+  function getWelcomeMessage(link: InviteLink): string {
+    return `🎉 Welcome!
+
+Thanks for your purchase. Here are your access details:
+
+📱 Group: ${link.invite_link}
+
+🔐 Dashboard: ${dashboardUrl}
+
+👤 User Code: ${link.access_code}
+
+If you need support, access the dashboard and visit the Support section.`;
+  }
+
+  function copyWelcomeMessage() {
+    if (generatedLink) {
+      navigator.clipboard.writeText(getWelcomeMessage(generatedLink));
+      setCopied(true);
+      toast.success('Welcome message copied!');
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  function copyText(text: string, label: string = 'Text') {
     navigator.clipboard.writeText(text);
-    toast.success(`${label} copied to clipboard`);
+    toast.success(`${label} copied!`);
   }
 
   function getStatusBadge(status: string) {
     switch (status) {
       case 'active':
-        return <Badge variant="outline" className="border-warning text-warning">Active</Badge>;
+        return <Badge variant="outline" className="border-success text-success">Active</Badge>;
       case 'used':
-        return <Badge variant="outline" className="border-success text-success">Used</Badge>;
+        return <Badge variant="outline" className="border-warning text-warning">Used</Badge>;
       case 'expired':
         return <Badge variant="outline" className="border-muted-foreground text-muted-foreground">Expired</Badge>;
       case 'revoked':
@@ -197,13 +231,13 @@ export default function Links() {
     );
   }
 
-  // Code user view - only show their link
+  // User view - only show their link
   if (codeUser && !isAdmin) {
     return (
       <div className="space-y-8 animate-fade-in">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Your Invite Link</h1>
-          <p className="text-muted-foreground mt-1">Access your personalized Telegram invite</p>
+          <h1 className="text-3xl font-bold text-foreground">Your Access</h1>
+          <p className="text-muted-foreground mt-1">Your personalized Telegram invite</p>
         </div>
 
         {userLink ? (
@@ -214,7 +248,7 @@ export default function Links() {
                 {getStatusBadge(userLink.status || 'active')}
               </div>
               <CardDescription>
-                {userLink.group_name || `Group ${userLink.group_id}`}
+                {userLink.group_name || 'Telegram Group'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -224,7 +258,7 @@ export default function Links() {
                 </code>
               </div>
               <div className="flex gap-2">
-                <Button onClick={() => copyText(userLink.invite_link)} variant="outline" className="flex-1">
+                <Button onClick={() => copyText(userLink.invite_link, 'Link')} variant="outline" className="flex-1">
                   <Copy className="w-4 h-4 mr-2" />
                   Copy Link
                 </Button>
@@ -235,9 +269,6 @@ export default function Links() {
                   </a>
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground text-center">
-                Created: {format(new Date(userLink.created_at), 'MMM d, yyyy HH:mm')}
-              </p>
             </CardContent>
           </Card>
         ) : (
@@ -247,7 +278,7 @@ export default function Links() {
               <div>
                 <h3 className="font-semibold text-foreground">No Link Found</h3>
                 <p className="text-muted-foreground">
-                  The invite link associated with your access code could not be found.
+                  The invite link for your access code was not found.
                 </p>
               </div>
             </CardContent>
@@ -272,7 +303,7 @@ export default function Links() {
             <div>
               <h3 className="font-semibold text-foreground">Configuration Required</h3>
               <p className="text-muted-foreground">
-                Please configure your Bot Token and Group IDs in Settings before generating links.
+                Configure your Bot Token and Group IDs in Settings first.
               </p>
             </div>
           </CardContent>
@@ -286,25 +317,26 @@ export default function Links() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Invite Links</h1>
-          <p className="text-muted-foreground mt-1">Generate and manage single-use invite links</p>
+          <p className="text-muted-foreground mt-1">Generate and manage invite links</p>
         </div>
         <Button variant="outline" size="icon" onClick={loadData}>
           <RefreshCw className="w-4 h-4" />
         </Button>
       </div>
 
+      {/* Generate Link Card */}
       <Card className="glass">
         <CardHeader>
           <CardTitle>Generate New Link</CardTitle>
           <CardDescription>Create a single-use invite link with access code</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           <div className="flex gap-4">
             <Select value={selectedGroup} onValueChange={setSelectedGroup}>
               <SelectTrigger className="w-64 bg-input">
                 <SelectValue placeholder="Select a group" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-popover border-border">
                 {groups.map((group) => (
                   <SelectItem key={group.id} value={group.id}>
                     {group.name || group.id}
@@ -321,29 +353,61 @@ export default function Links() {
               Generate Link
             </Button>
           </div>
-
-          {generatedCode && (
-            <div className="p-4 rounded-lg bg-success/10 border border-success/30">
-              <div className="flex items-center gap-3 mb-2">
-                <Key className="w-5 h-5 text-success" />
-                <span className="font-semibold text-success">Access Code Generated!</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 text-lg font-mono font-bold tracking-widest text-foreground bg-background/50 px-4 py-2 rounded">
-                  {generatedCode}
-                </code>
-                <Button size="sm" variant="outline" onClick={() => copyText(generatedCode, 'Access code')}>
-                  <Copy className="w-4 h-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Share this code with the user so they can access their invite link.
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
+      {/* Welcome Message Dialog */}
+      <Dialog open={showWelcomeDialog} onOpenChange={setShowWelcomeDialog}>
+        <DialogContent className="glass max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-primary" />
+              Link Generated Successfully!
+            </DialogTitle>
+            <DialogDescription>
+              Copy this welcome message to send to your customer
+            </DialogDescription>
+          </DialogHeader>
+          
+          {generatedLink && (
+            <div className="space-y-4">
+              <Textarea
+                readOnly
+                value={getWelcomeMessage(generatedLink)}
+                className="min-h-[200px] bg-muted/30 font-mono text-sm"
+              />
+              
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={copyWelcomeMessage} className="glow-sm">
+                  {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                  {copied ? 'Copied!' : 'Copy Message'}
+                </Button>
+                <Button variant="outline" onClick={() => setShowWelcomeDialog(false)}>
+                  Close
+                </Button>
+              </div>
+
+              <div className="p-3 rounded-lg bg-muted/20 border border-border">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Access Code:</span>
+                  <div className="flex items-center gap-2">
+                    <code className="font-mono font-bold text-foreground">{generatedLink.access_code}</code>
+                    <Button 
+                      size="sm" 
+                      variant="ghost"
+                      onClick={() => copyText(generatedLink.access_code!, 'Code')}
+                    >
+                      <Copy className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Link History */}
       <Card className="glass">
         <CardHeader>
           <CardTitle>Link History</CardTitle>
@@ -352,7 +416,7 @@ export default function Links() {
         <CardContent>
           {links.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
-              No invite links generated yet. Create your first one above!
+              No invite links yet. Generate your first one above!
             </p>
           ) : (
             <div className="space-y-3">
@@ -363,39 +427,39 @@ export default function Links() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1">
-                      <code className="text-sm font-mono text-foreground truncate max-w-md">
-                        {link.invite_link}
-                      </code>
+                      <span className="text-sm font-medium text-foreground">
+                        {link.group_name || 'Group'}
+                      </span>
                       {getStatusBadge(link.status)}
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span>Group: {link.group_name || link.group_id}</span>
                       {link.access_code && (
-                        <span className="font-mono bg-muted px-2 py-0.5 rounded">
-                          Code: {link.access_code}
+                        <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded">
+                          {link.access_code}
                         </span>
                       )}
-                      <span>Created: {format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
-                      {link.used_at && (
-                        <span>Used: {format(new Date(link.used_at), 'MMM d, yyyy HH:mm')}</span>
-                      )}
+                      <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {link.access_code && (
                       <Button
                         variant="ghost"
-                        size="icon"
-                        onClick={() => copyText(link.access_code!, 'Access code')}
-                        title="Copy access code"
+                        size="sm"
+                        onClick={() => {
+                          setGeneratedLink(link);
+                          setShowWelcomeDialog(true);
+                          setCopied(false);
+                        }}
+                        title="Show welcome message"
                       >
-                        <Key className="w-4 h-4" />
+                        <MessageSquare className="w-4 h-4" />
                       </Button>
                     )}
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => copyText(link.invite_link)}
+                      onClick={() => copyText(link.invite_link, 'Link')}
                     >
                       <Copy className="w-4 h-4" />
                     </Button>
