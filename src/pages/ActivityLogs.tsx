@@ -130,8 +130,8 @@ export default function ActivityLogs() {
   const leftCount = filteredLogs.filter(l => l.action === 'member_left').length;
   const revokedCount = filteredLogs.filter(l => l.action === 'auto_revoke_on_leave').length;
 
-  // Redirect regular users after hooks
-  if (!authLoading && !hasAccess) {
+  // Redirect regular users after hooks - wait for auth AND codeUser to be resolved
+  if (!authLoading && codeUser && !hasAccess) {
     return <Navigate to="/links" replace />;
   }
 

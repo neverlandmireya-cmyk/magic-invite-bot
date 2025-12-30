@@ -65,8 +65,8 @@ export default function ResellerDashboard() {
     { label: 'Expired', value: stats.expired, icon: XCircle, color: 'text-muted-foreground' },
   ];
 
-  // Redirect non-resellers after hooks
-  if (!authLoading && !isReseller) {
+  // Redirect non-resellers after hooks - wait for auth AND codeUser to be resolved
+  if (!authLoading && codeUser && !isReseller) {
     if (isAdmin) {
       return <Navigate to="/" replace />;
     }
