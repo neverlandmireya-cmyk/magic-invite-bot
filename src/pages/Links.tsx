@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Edit, Unlink } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface InviteLink {
@@ -67,9 +67,12 @@ export default function Links() {
   // Search
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Delete/Ban confirmation
+  // Delete/Ban/Revoke/Regenerate confirmation
   const [deleteTarget, setDeleteTarget] = useState<InviteLink | null>(null);
   const [banTarget, setBanTarget] = useState<InviteLink | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<InviteLink | null>(null);
+  const [regenerateTarget, setRegenerateTarget] = useState<InviteLink | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
   
   // Account deleted dialog
   const [showAccountDeletedDialog, setShowAccountDeletedDialog] = useState(false);
@@ -214,25 +217,9 @@ export default function Links() {
     setGenerating(false);
   }
 
+  // Delete from panel only (no Telegram action)
   async function deleteLink(link: InviteLink) {
     try {
-      // First try to revoke on Telegram
-      if (codeUser?.accessCode && link.group_id && link.invite_link) {
-        const { data: revokeData } = await supabase.functions.invoke('telegram-revoke', {
-          body: { 
-            adminCode: codeUser.accessCode,
-            groupId: link.group_id,
-            inviteLink: link.invite_link
-          }
-        });
-        
-        if (revokeData?.success) {
-          console.log('Link revoked on Telegram');
-        } else if (revokeData?.warning) {
-          console.log('Telegram revoke warning:', revokeData.warning);
-        }
-      }
-
       const { error } = await supabase
         .from('invite_links')
         .delete()
@@ -243,10 +230,9 @@ export default function Links() {
       await logActivity('delete_link', 'invite_link', link.id, {
         access_code: link.access_code,
         group_name: link.group_name,
-        revoked_on_telegram: true,
       }, codeUser?.accessCode || 'unknown');
 
-      toast.success('Link deleted and revoked on Telegram');
+      toast.success('Link deleted from panel');
       setDeleteTarget(null);
       loadData();
     } catch (error: any) {
@@ -254,9 +240,117 @@ export default function Links() {
     }
   }
 
+  // Revoke on Telegram only (keeps record in panel with revoked status)
+  async function revokeOnTelegram(link: InviteLink) {
+    try {
+      if (!codeUser?.accessCode) {
+        toast.error('Authentication required');
+        return;
+      }
+
+      const { data: revokeData, error } = await supabase.functions.invoke('telegram-revoke', {
+        body: { 
+          adminCode: codeUser.accessCode,
+          groupId: link.group_id,
+          inviteLink: link.invite_link
+        }
+      });
+
+      if (error) throw error;
+
+      // Update status in database
+      await supabase
+        .from('invite_links')
+        .update({ status: 'revoked' })
+        .eq('id', link.id);
+
+      await logActivity('revoke_telegram', 'invite_link', link.id, {
+        access_code: link.access_code,
+        group_name: link.group_name,
+        telegram_response: revokeData?.success ? 'success' : revokeData?.warning,
+      }, codeUser.accessCode);
+
+      if (revokeData?.success) {
+        toast.success('Link revoked on Telegram');
+      } else {
+        toast.warning('Link may already be revoked on Telegram');
+      }
+      
+      setRevokeTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error('Failed to revoke link on Telegram');
+    }
+  }
+
+  // Regenerate link - create new Telegram link for same access code
+  async function regenerateLink(link: InviteLink) {
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    setRegenerating(true);
+
+    try {
+      // First revoke the old link on Telegram (optional, best practice)
+      if (link.invite_link) {
+        await supabase.functions.invoke('telegram-revoke', {
+          body: { 
+            adminCode: codeUser.accessCode,
+            groupId: link.group_id,
+            inviteLink: link.invite_link
+          }
+        });
+      }
+
+      // Generate new link with same access code
+      const { data, error } = await supabase.functions.invoke('telegram-invite', {
+        body: { 
+          adminCode: codeUser.accessCode,
+          groupId: link.group_id,
+          memberLimit: 1,
+          accessCode: link.access_code
+        }
+      });
+
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Failed to create new link');
+
+      // Update the database record with new link
+      const { error: updateError } = await supabase
+        .from('invite_links')
+        .update({ 
+          invite_link: data.invite_link,
+          status: 'active',
+          expires_at: data.expire_date 
+            ? new Date(data.expire_date * 1000).toISOString() 
+            : null,
+        })
+        .eq('id', link.id);
+
+      if (updateError) throw updateError;
+
+      await logActivity('regenerate_link', 'invite_link', link.id, {
+        access_code: link.access_code,
+        group_name: link.group_name,
+        old_link: link.invite_link,
+        new_link: data.invite_link,
+      }, codeUser.accessCode);
+
+      toast.success('New link generated!');
+      setRegenerateTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to regenerate link');
+    }
+
+    setRegenerating(false);
+  }
+
+  // Ban link - revoke on Telegram AND mark as banned in panel
   async function banLink(link: InviteLink) {
     try {
-      // First try to revoke on Telegram
       if (codeUser?.accessCode && link.group_id && link.invite_link) {
         const { data: revokeData } = await supabase.functions.invoke('telegram-revoke', {
           body: { 
@@ -631,9 +725,9 @@ If you need support, access the dashboard and visit the Support section.`;
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent className="glass">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Link</AlertDialogTitle>
+            <AlertDialogTitle>Delete from Panel</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to permanently delete this invite link?
+              This will only delete the record from the panel. The link on Telegram will NOT be affected.
               {deleteTarget?.access_code && (
                 <span className="block mt-2 font-mono text-foreground">{deleteTarget.access_code}</span>
               )}
@@ -645,7 +739,7 @@ If you need support, access the dashboard and visit the Support section.`;
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => deleteTarget && deleteLink(deleteTarget)}
             >
-              Delete
+              Delete from Panel
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -657,7 +751,7 @@ If you need support, access the dashboard and visit the Support section.`;
           <AlertDialogHeader>
             <AlertDialogTitle>Ban/Revoke Link</AlertDialogTitle>
             <AlertDialogDescription>
-              This will revoke the link and mark it as banned. The user will no longer be able to use it.
+              This will revoke the link on Telegram AND mark it as banned in the panel. The user will no longer be able to use it.
               {banTarget?.access_code && (
                 <span className="block mt-2 font-mono text-foreground">{banTarget.access_code}</span>
               )}
@@ -670,6 +764,61 @@ If you need support, access the dashboard and visit the Support section.`;
               onClick={() => banTarget && banLink(banTarget)}
             >
               Ban Link
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Revoke on Telegram Only Dialog */}
+      <AlertDialog open={!!revokeTarget} onOpenChange={() => setRevokeTarget(null)}>
+        <AlertDialogContent className="glass">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke on Telegram</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revoke the link on Telegram only. The record will remain in the panel with "revoked" status.
+              {revokeTarget?.access_code && (
+                <span className="block mt-2 font-mono text-foreground">{revokeTarget.access_code}</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-orange-500 text-white hover:bg-orange-600"
+              onClick={() => revokeTarget && revokeOnTelegram(revokeTarget)}
+            >
+              <Unlink className="w-4 h-4 mr-2" />
+              Revoke on Telegram
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Regenerate Link Dialog */}
+      <AlertDialog open={!!regenerateTarget} onOpenChange={() => setRegenerateTarget(null)}>
+        <AlertDialogContent className="glass">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regenerate Link</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revoke the old link and generate a new Telegram invite link for the same access code.
+              {regenerateTarget?.access_code && (
+                <span className="block mt-2 font-mono text-foreground">{regenerateTarget.access_code}</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={regenerating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => regenerateTarget && regenerateLink(regenerateTarget)}
+              disabled={regenerating}
+            >
+              {regenerating ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Regenerate Link
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -743,6 +892,7 @@ If you need support, access the dashboard and visit the Support section.`;
                       variant="ghost"
                       size="icon"
                       onClick={() => copyText(link.invite_link, 'Link')}
+                      title="Copy link"
                     >
                       <Copy className="w-4 h-4" />
                     </Button>
@@ -750,27 +900,54 @@ If you need support, access the dashboard and visit the Support section.`;
                       variant="ghost"
                       size="icon"
                       asChild
+                      title="Open link"
                     >
                       <a href={link.invite_link} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-4 h-4" />
                       </a>
                     </Button>
+                    {/* Regenerate - create new link for same access code */}
+                    {link.access_code && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setRegenerateTarget(link)}
+                        title="Regenerate link (new Telegram link, same code)"
+                        className="text-primary hover:text-primary"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {/* Revoke on Telegram only */}
+                    {link.status !== 'revoked' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setRevokeTarget(link)}
+                        title="Revoke on Telegram only"
+                        className="text-orange-500 hover:text-orange-600"
+                      >
+                        <Unlink className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {/* Ban - revoke on Telegram + mark as banned */}
                     {link.status !== 'revoked' && (
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => setBanTarget(link)}
-                        title="Ban/Revoke link"
+                        title="Ban (revoke on Telegram + mark banned)"
                         className="text-warning hover:text-warning"
                       >
                         <Ban className="w-4 h-4" />
                       </Button>
                     )}
+                    {/* Delete from panel only */}
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => setDeleteTarget(link)}
-                      title="Delete link"
+                      title="Delete from panel only"
                       className="text-destructive hover:text-destructive"
                     >
                       <Trash2 className="w-4 h-4" />
