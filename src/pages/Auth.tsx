@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Key, Shield } from 'lucide-react';
+import { Key, Shield, ShieldOff } from 'lucide-react';
 import { z } from 'zod';
 
 const codeSchema = z.object({
@@ -15,7 +15,8 @@ const codeSchema = z.object({
 export default function Auth() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signInWithCode } = useAuth();
+  const [showBanned, setShowBanned] = useState(false);
+  const { signInWithCode, isBanned } = useAuth();
   const navigate = useNavigate();
 
   const handleCodeSubmit = async (e: React.FormEvent) => {
@@ -28,16 +29,70 @@ export default function Auth() {
     }
 
     setLoading(true);
-    const { error } = await signInWithCode(code);
+    const result = await signInWithCode(code);
     
-    if (error) {
-      toast.error(error.message || 'Invalid access code');
+    if (result.error) {
+      if (result.isBanned) {
+        setShowBanned(true);
+      } else {
+        toast.error(result.error.message || 'Invalid access code');
+      }
       setLoading(false);
     } else {
       toast.success('Access granted!');
       navigate('/links');
     }
   };
+
+  // Show banned message
+  if (showBanned || isBanned) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="absolute inset-0 overflow-hidden">
+          <div 
+            className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full opacity-20"
+            style={{ background: 'radial-gradient(circle, hsl(var(--destructive)) 0%, transparent 70%)' }}
+          />
+          <div 
+            className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full opacity-10"
+            style={{ background: 'radial-gradient(circle, hsl(var(--destructive)) 0%, transparent 70%)' }}
+          />
+        </div>
+
+        <div className="w-full max-w-md animate-fade-in relative z-10">
+          <div className="glass rounded-2xl p-8 shadow-2xl border-destructive/50">
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-20 h-20 rounded-full bg-destructive/20 flex items-center justify-center mb-4">
+                <ShieldOff className="w-10 h-10 text-destructive" />
+              </div>
+              <h1 className="text-2xl font-bold text-destructive">Access Denied</h1>
+              <p className="text-muted-foreground text-center mt-2">
+                This user is banned
+              </p>
+            </div>
+
+            <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30 mb-6">
+              <p className="text-sm text-center text-foreground">
+                Your access code has been banned from the system. 
+                If you believe this is an error, please contact support.
+              </p>
+            </div>
+
+            <Button 
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setShowBanned(false);
+                setCode('');
+              }}
+            >
+              Try Another Code
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
