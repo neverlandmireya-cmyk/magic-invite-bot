@@ -94,6 +94,10 @@ export default function Links() {
   // Delete user (permanent)
   const [deleteUserTarget, setDeleteUserTarget] = useState<InviteLink | null>(null);
   
+  // View message for existing link (reseller feature)
+  const [viewMessageLink, setViewMessageLink] = useState<InviteLink | null>(null);
+  const [viewMessageCopied, setViewMessageCopied] = useState(false);
+  
   // Edit client info
   const [editClientTarget, setEditClientTarget] = useState<InviteLink | null>(null);
   const [clientEmail, setClientEmail] = useState('');
@@ -1248,6 +1252,17 @@ export default function Links() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => {
+                          setViewMessageLink(link);
+                          setViewMessageCopied(false);
+                        }}
+                        title="View Message"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </Button>
                       <Button size="sm" variant="ghost" onClick={() => copyText(link.invite_link, 'Link')}>
                         <Copy className="w-4 h-4" />
                       </Button>
@@ -1263,6 +1278,65 @@ export default function Links() {
             )}
           </CardContent>
         </Card>
+
+        {/* View Message Dialog for existing links */}
+        <Dialog open={!!viewMessageLink} onOpenChange={() => setViewMessageLink(null)}>
+          <DialogContent className="glass max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-primary" />
+                Welcome Message
+              </DialogTitle>
+              <DialogDescription>
+                Copy this message to send to your customer
+              </DialogDescription>
+            </DialogHeader>
+            
+            {viewMessageLink && (
+              <div className="space-y-4">
+                <Textarea
+                  readOnly
+                  value={getWelcomeMessage(viewMessageLink)}
+                  className="min-h-[200px] bg-muted/30 font-mono text-sm"
+                />
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <Button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(getWelcomeMessage(viewMessageLink));
+                      setViewMessageCopied(true);
+                      toast.success('Message copied!');
+                      setTimeout(() => setViewMessageCopied(false), 2000);
+                    }} 
+                    className="glow-sm"
+                  >
+                    {viewMessageCopied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                    {viewMessageCopied ? 'Copied!' : 'Copy Message'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setViewMessageLink(null)}>
+                    Close
+                  </Button>
+                </div>
+
+                <div className="p-3 rounded-lg bg-muted/20 border border-border">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Access Code:</span>
+                    <div className="flex items-center gap-2">
+                      <code className="font-mono font-bold text-foreground">{viewMessageLink.access_code}</code>
+                      <Button 
+                        size="sm" 
+                        variant="ghost"
+                        onClick={() => copyText(viewMessageLink.access_code!, 'Code')}
+                      >
+                        <Copy className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
