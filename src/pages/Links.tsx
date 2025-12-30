@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff, ShieldCheck, DollarSign } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff, ShieldCheck, DollarSign, UserCog, Mail, IdCard } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 
@@ -24,6 +24,8 @@ interface InviteLink {
   used_at: string | null;
   expires_at: string | null;
   access_code: string | null;
+  client_email: string | null;
+  client_id: string | null;
 }
 
 function generateAccessCode(): string {
@@ -87,6 +89,12 @@ export default function Links() {
   
   // Delete user (permanent)
   const [deleteUserTarget, setDeleteUserTarget] = useState<InviteLink | null>(null);
+  
+  // Edit client info
+  const [editClientTarget, setEditClientTarget] = useState<InviteLink | null>(null);
+  const [clientEmail, setClientEmail] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [savingClientInfo, setSavingClientInfo] = useState(false);
 
   const dashboardUrl = 'https://login.exylus.net';
 
@@ -532,6 +540,44 @@ export default function Links() {
     }
 
     setSubmittingTicket(false);
+  }
+
+  function openEditClientDialog(link: InviteLink) {
+    setEditClientTarget(link);
+    setClientEmail(link.client_email || '');
+    setClientId(link.client_id || '');
+  }
+
+  async function saveClientInfo() {
+    if (!editClientTarget) return;
+    
+    setSavingClientInfo(true);
+    
+    try {
+      const { error } = await supabase
+        .from('invite_links')
+        .update({
+          client_email: clientEmail.trim() || null,
+          client_id: clientId.trim() || null,
+        })
+        .eq('id', editClientTarget.id);
+
+      if (error) throw error;
+
+      await logActivity('update_client_info', 'invite_link', editClientTarget.id, {
+        access_code: editClientTarget.access_code,
+        client_email: clientEmail.trim() || null,
+        client_id: clientId.trim() || null,
+      }, codeUser?.accessCode || 'unknown');
+
+      toast.success('Client info updated');
+      setEditClientTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error('Failed to update client info');
+    }
+    
+    setSavingClientInfo(false);
   }
 
   // Separate active and prohibited (removed + banned) links
@@ -1064,6 +1110,76 @@ If you need support, access the dashboard and visit the Support section.`;
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Edit Client Info Dialog */}
+      <Dialog open={!!editClientTarget} onOpenChange={() => setEditClientTarget(null)}>
+        <DialogContent className="glass max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="w-5 h-5 text-primary" />
+              Client Information
+            </DialogTitle>
+            <DialogDescription>
+              Add or edit client details (admin only)
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {editClientTarget?.access_code && (
+              <div className="p-2 rounded bg-muted/30 border border-border">
+                <span className="text-xs text-muted-foreground">Access Code:</span>
+                <span className="font-mono text-sm ml-2 text-foreground">{editClientTarget.access_code}</span>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Mail className="w-4 h-4 text-muted-foreground" />
+                Client Email
+              </label>
+              <Input
+                type="email"
+                placeholder="client@example.com"
+                value={clientEmail}
+                onChange={(e) => setClientEmail(e.target.value)}
+                className="bg-input"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <IdCard className="w-4 h-4 text-muted-foreground" />
+                Client ID
+              </label>
+              <Input
+                type="text"
+                placeholder="e.g., telegram username or ID"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                className="bg-input"
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                onClick={saveClientInfo} 
+                disabled={savingClientInfo}
+                className="flex-1 glow-sm"
+              >
+                {savingClientInfo ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4 mr-2" />
+                )}
+                Save
+              </Button>
+              <Button variant="outline" onClick={() => setEditClientTarget(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Links with Tabs */}
       <Tabs defaultValue="active" className="w-full">
         <div className="flex items-center justify-between mb-4">
@@ -1121,16 +1237,42 @@ If you need support, access the dashboard and visit the Support section.`;
                           </span>
                           {getStatusBadge(link.status)}
                         </div>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                           {link.access_code && (
                             <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded">
                               {link.access_code}
                             </span>
                           )}
                           <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
+                          {(link.client_email || link.client_id) && (
+                            <span className="flex items-center gap-2 text-muted-foreground/80">
+                              {link.client_email && (
+                                <span className="flex items-center gap-1">
+                                  <Mail className="w-3 h-3" />
+                                  {link.client_email}
+                                </span>
+                              )}
+                              {link.client_id && (
+                                <span className="flex items-center gap-1">
+                                  <IdCard className="w-3 h-3" />
+                                  {link.client_id}
+                                </span>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        {/* Edit client info */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditClientDialog(link)}
+                          title="Edit client info"
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <UserCog className="w-4 h-4" />
+                        </Button>
                         {link.access_code && (
                           <Button
                             variant="ghost"
@@ -1282,7 +1424,7 @@ If you need support, access the dashboard and visit the Support section.`;
                           </span>
                           {getStatusBadge(link.status)}
                         </div>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                           {link.access_code && (
                             <span className={`font-mono px-2 py-0.5 rounded ${
                               link.status === 'banned' 
@@ -1293,9 +1435,35 @@ If you need support, access the dashboard and visit the Support section.`;
                             </span>
                           )}
                           <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
+                          {(link.client_email || link.client_id) && (
+                            <span className="flex items-center gap-2 text-muted-foreground/80">
+                              {link.client_email && (
+                                <span className="flex items-center gap-1">
+                                  <Mail className="w-3 h-3" />
+                                  {link.client_email}
+                                </span>
+                              )}
+                              {link.client_id && (
+                                <span className="flex items-center gap-1">
+                                  <IdCard className="w-3 h-3" />
+                                  {link.client_id}
+                                </span>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
+                        {/* Edit client info */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditClientDialog(link)}
+                          title="Edit client info"
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <UserCog className="w-4 h-4" />
+                        </Button>
                         {/* Unban - only for banned users */}
                         {link.status === 'banned' && (
                           <Button

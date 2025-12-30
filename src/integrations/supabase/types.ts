@@ -74,6 +74,8 @@ export type Database = {
       invite_links: {
         Row: {
           access_code: string | null
+          client_email: string | null
+          client_id: string | null
           created_at: string | null
           created_by: string | null
           expires_at: string | null
@@ -86,6 +88,8 @@ export type Database = {
         }
         Insert: {
           access_code?: string | null
+          client_email?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           expires_at?: string | null
@@ -98,6 +102,8 @@ export type Database = {
         }
         Update: {
           access_code?: string | null
+          client_email?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           expires_at?: string | null
