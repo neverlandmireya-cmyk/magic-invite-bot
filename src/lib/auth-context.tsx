@@ -51,7 +51,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: { code: stored.accessCode }
       });
 
-      if (error || !data?.success) {
+      // Check for banned in error response
+      if (error) {
+        const errorContext = error.context;
+        if (errorContext) {
+          try {
+            const errorBody = await errorContext.json();
+            if (errorBody?.isBanned) {
+              setIsBanned(true);
+              localStorage.removeItem(CODE_USER_KEY);
+              setCodeUser(null);
+              setLoading(false);
+              return;
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+        localStorage.removeItem(CODE_USER_KEY);
+        setCodeUser(null);
+        setLoading(false);
+        return;
+      }
+
+      if (!data?.success) {
         // Check if user is banned
         if (data?.isBanned) {
           setIsBanned(true);
@@ -92,7 +115,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: { code: trimmedCode }
       });
 
+      // Handle both error object and data response for banned check
       if (error) {
+        // Try to parse error context for banned status
+        const errorContext = error.context;
+        if (errorContext) {
+          try {
+            const errorBody = await errorContext.json();
+            if (errorBody?.isBanned) {
+              setIsBanned(true);
+              return { error: new Error('This user is banned'), isBanned: true };
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
         return { error: new Error('Failed to verify code') };
       }
 
