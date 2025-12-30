@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
-import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, X } from "lucide-react";
+import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, X, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
@@ -9,6 +9,7 @@ import { useState } from "react";
 const adminNavItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/links", label: "Invite Links", icon: Link2 },
+  { path: "/activity", label: "Activity Logs", icon: Activity },
   { path: "/admin-codes", label: "Admin Access", icon: UserCog },
   { path: "/support", label: "Ticket", icon: HelpCircle },
   { path: "/settings", label: "Settings", icon: Settings },
