@@ -53,8 +53,7 @@ export function Sidebar() {
       </div>
 
       {codeUser && !isAdmin && (
-        <div className="p-4 mx-4 mt-4 rounded-lg bg-muted/30 border border-border">
-          <p className="text-xs text-muted-foreground mb-1">Access Code</p>
+        <div className="px-4 py-3 mx-4 mt-4 rounded-lg bg-muted/30 border border-border">
           <code className="text-sm font-mono font-bold text-foreground">
             {codeUser.accessCode}
           </code>
