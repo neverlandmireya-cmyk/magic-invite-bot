@@ -330,15 +330,19 @@ If you need support, access the dashboard and visit the Support section.`;
                 <CardTitle>Telegram Invite</CardTitle>
                 {getStatusBadge(userLink.status || 'active')}
               </div>
-              {userLink.group_name && (
-                <CardDescription className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs">
-                    {userLink.group_name}
-                  </Badge>
-                </CardDescription>
-              )}
             </CardHeader>
             <CardContent className="space-y-4">
+              {userLink.group_name && (
+                <div className="p-3 rounded-lg bg-primary/10 border border-primary/30 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                    <ExternalLink className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Group</p>
+                    <p className="text-lg font-semibold text-primary">{userLink.group_name}</p>
+                  </div>
+                </div>
+              )}
               <div className="p-4 rounded-lg bg-muted/30 border border-border">
                 <code className="text-sm font-mono text-foreground break-all">
                   {userLink.invite_link}
