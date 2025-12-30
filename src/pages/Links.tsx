@@ -181,15 +181,15 @@ export default function Links() {
   }
 
   function getWelcomeMessage(link: InviteLink): string {
-    return `🎉 Welcome!
+    return `Welcome!
 
 Thanks for your purchase. Here are your access details:
 
-📱 Group: ${link.invite_link}
+Group: ${link.invite_link}
 
-🔐 Dashboard: ${dashboardUrl}
+Dashboard: ${dashboardUrl}
 
-👤 User Code: ${link.access_code}
+User Code: ${link.access_code}
 
 If you need support, access the dashboard and visit the Support section.`;
   }
