@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Settings from "./pages/Settings";
 import Links from "./pages/Links";
 import AdminCodes from "./pages/AdminCodes";
+import Support from "./pages/Support";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,6 +39,7 @@ const App = () => (
               <Route path="/settings" element={<Settings />} />
               <Route path="/links" element={<Links />} />
               <Route path="/admin-codes" element={<AdminCodes />} />
+              <Route path="/support" element={<Support />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

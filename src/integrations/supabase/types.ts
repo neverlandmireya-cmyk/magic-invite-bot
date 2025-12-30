@@ -104,6 +104,71 @@ export type Database = {
         }
         Relationships: []
       }
+      ticket_replies: {
+        Row: {
+          created_at: string
+          id: string
+          is_admin: boolean
+          message: string
+          ticket_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_admin?: boolean
+          message: string
+          ticket_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_admin?: boolean
+          message?: string
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_replies_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tickets: {
+        Row: {
+          access_code: string
+          created_at: string
+          id: string
+          message: string
+          priority: string | null
+          status: string
+          subject: string
+          updated_at: string
+        }
+        Insert: {
+          access_code: string
+          created_at?: string
+          id?: string
+          message: string
+          priority?: string | null
+          status?: string
+          subject: string
+          updated_at?: string
+        }
+        Update: {
+          access_code?: string
+          created_at?: string
+          id?: string
+          message?: string
+          priority?: string | null
+          status?: string
+          subject?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
