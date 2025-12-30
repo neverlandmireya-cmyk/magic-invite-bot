@@ -98,6 +98,9 @@ export default function Links() {
   const [viewMessageLink, setViewMessageLink] = useState<InviteLink | null>(null);
   const [viewMessageCopied, setViewMessageCopied] = useState(false);
   
+  // Reseller ban feature
+  const [resellerBanTarget, setResellerBanTarget] = useState<InviteLink | null>(null);
+  
   // Edit client info
   const [editClientTarget, setEditClientTarget] = useState<InviteLink | null>(null);
   const [clientEmail, setClientEmail] = useState('');
@@ -665,6 +668,59 @@ export default function Links() {
 
       toast.success('User banned - access code blocked, revenue removed');
       setBanTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error('Failed to ban user');
+    }
+  }
+
+  // Reseller ban - revoke on Telegram AND mark as BANNED
+  async function resellerBanLink(link: InviteLink) {
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    try {
+      if (link.group_id && link.invite_link) {
+        const { data: revokeData } = await supabase.functions.invoke('telegram-revoke', {
+          body: { 
+            adminCode: codeUser.accessCode,
+            groupId: link.group_id,
+            inviteLink: link.invite_link
+          }
+        });
+        
+        if (revokeData?.success) {
+          console.log('Link revoked on Telegram');
+        } else if (revokeData?.warning) {
+          console.log('Telegram revoke warning:', revokeData.warning);
+        }
+      }
+
+      // Update status to banned via Edge Function
+      const { data: updateResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: { id: link.id, updates: { status: 'banned' } }
+        }
+      });
+
+      if (error || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to ban link');
+      }
+
+      await logActivity('reseller_ban_link', 'invite_link', link.id, {
+        access_code: link.access_code,
+        group_name: link.group_name,
+        previous_status: link.status,
+        revoked_on_telegram: true,
+        reseller_code: codeUser.accessCode,
+      }, codeUser.accessCode);
+
+      toast.success('User banned successfully');
+      setResellerBanTarget(null);
       loadData();
     } catch (error: any) {
       toast.error('Failed to ban user');
@@ -1241,20 +1297,31 @@ export default function Links() {
                 {links.map((link) => (
                   <div
                     key={link.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
+                    className="p-4 rounded-lg bg-muted/30 border border-border"
                   >
-                    <div className="flex-1">
+                    <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <code className="font-mono text-sm bg-primary/10 text-primary px-2 py-0.5 rounded">
                           {link.access_code}
                         </code>
                         {getStatusBadge(link.status || 'active')}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="text-xs text-muted-foreground">
                         {format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    
+                    {/* Telegram Link Display */}
+                    <div className="flex items-center gap-2 p-2 rounded bg-muted/20 border border-border/50 mb-3">
+                      <span className="text-xs text-muted-foreground truncate flex-1 font-mono">
+                        {link.invite_link}
+                      </span>
+                      <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => copyText(link.invite_link, 'Link')}>
+                        <Copy className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    
+                    <div className="flex items-center justify-end gap-2">
                       <Button 
                         size="sm" 
                         variant="ghost" 
@@ -1264,14 +1331,25 @@ export default function Links() {
                         }}
                         title="View Message"
                       >
-                        <MessageSquare className="w-4 h-4" />
+                        <MessageSquare className="w-4 h-4 mr-1" />
+                        <span className="text-xs">Message</span>
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => copyText(link.invite_link, 'Link')}>
-                        <Copy className="w-4 h-4" />
-                      </Button>
+                      {link.status === 'active' && (
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setResellerBanTarget(link)}
+                          title="Ban User"
+                        >
+                          <Ban className="w-4 h-4 mr-1" />
+                          <span className="text-xs">Ban</span>
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" asChild>
                         <a href={link.invite_link} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="w-4 h-4" />
+                          <ExternalLink className="w-4 h-4 mr-1" />
+                          <span className="text-xs">Open</span>
                         </a>
                       </Button>
                     </div>
@@ -1340,6 +1418,36 @@ export default function Links() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Reseller Ban Confirmation Dialog */}
+        <AlertDialog open={!!resellerBanTarget} onOpenChange={() => setResellerBanTarget(null)}>
+          <AlertDialogContent className="glass border-destructive/30">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                <Ban className="w-5 h-5" />
+                Ban User
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This will revoke the Telegram invite link and block the user from accessing the group.
+                {resellerBanTarget?.access_code && (
+                  <span className="block mt-2 font-mono text-foreground bg-destructive/10 px-2 py-1 rounded">
+                    {resellerBanTarget.access_code}
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => resellerBanTarget && resellerBanLink(resellerBanTarget)}
+              >
+                <Ban className="w-4 h-4 mr-2" />
+                Ban User
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
