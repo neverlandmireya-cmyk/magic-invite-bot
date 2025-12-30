@@ -42,18 +42,45 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verify admin code server-side
-    const { data: adminData, error: adminError } = await supabase
+    // Verify admin or reseller code server-side
+    const trimmedCode = adminCode.trim().toUpperCase();
+    
+    // First check admin codes
+    const { data: adminData } = await supabase
       .from('admin_codes')
       .select('id, is_active')
-      .eq('code', adminCode.trim().toUpperCase())
+      .eq('code', trimmedCode)
       .eq('is_active', true)
       .maybeSingle();
 
-    if (adminError || !adminData) {
-      console.error('Admin verification failed:', adminError?.message || 'No matching admin code');
+    let isAuthorized = !!adminData;
+
+    // If not admin, check if reseller
+    if (!isAuthorized) {
+      const { data: resellerData } = await supabase
+        .from('resellers')
+        .select('id, is_active, group_id')
+        .eq('code', trimmedCode)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (resellerData) {
+        // Reseller can only create links for their assigned group
+        if (resellerData.group_id !== groupId) {
+          console.error('Reseller not authorized for this group');
+          return new Response(
+            JSON.stringify({ error: "Not authorized for this group" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      console.error('Authorization failed: No matching admin or reseller code');
       return new Response(
-        JSON.stringify({ error: "Unauthorized - invalid admin code" }),
+        JSON.stringify({ error: "Unauthorized - invalid code" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

@@ -57,7 +57,7 @@ async function logActivity(action: string, entityType: string, entityId: string 
 
 export default function Links() {
   const navigate = useNavigate();
-  const { isAdmin, codeUser } = useAuth();
+  const { isAdmin, isReseller, codeUser } = useAuth();
   const [links, setLinks] = useState<InviteLink[]>([]);
   const [userLink, setUserLink] = useState<InviteLink | null>(null);
   const [groups, setGroups] = useState<{ id: string; name?: string }[]>([]);
@@ -126,10 +126,25 @@ export default function Links() {
 
       if (linksError) throw linksError;
 
-      if (!isAdmin) {
-        // User view - just their link
+      // Regular user view - just their link
+      if (!isAdmin && !isReseller) {
         if (linksResponse?.data && linksResponse.data.length > 0) {
           setUserLink(linksResponse.data[0]);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Reseller view - they have a fixed group from their account
+      if (isReseller) {
+        // Set the reseller's assigned group
+        if (codeUser.groupId) {
+          setGroups([{ id: codeUser.groupId, name: codeUser.groupName || codeUser.groupId }]);
+          setSelectedGroup(codeUser.groupId);
+          setHasSettings(true);
+        }
+        if (linksResponse?.data) {
+          setLinks(linksResponse.data);
         }
         setLoading(false);
         return;
@@ -177,6 +192,91 @@ export default function Links() {
     }
     setLinkPrice('');
     setShowPriceDialog(true);
+  }
+
+  // Reseller generate link - no price required
+  async function generateResellerLink() {
+    if (!selectedGroup) {
+      toast.error('Please select a group');
+      return;
+    }
+
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    // Check credits
+    if (!codeUser.credits || codeUser.credits < 1) {
+      toast.error('Insufficient credits. Contact admin to add more credits.');
+      return;
+    }
+
+    setGenerating(true);
+
+    try {
+      const accessCode = generateAccessCode();
+      const selectedGroupData = groups.find(g => g.id === selectedGroup);
+
+      const { data, error } = await supabase.functions.invoke('telegram-invite', {
+        body: { 
+          adminCode: codeUser.accessCode,
+          groupId: selectedGroup,
+          memberLimit: 1,
+          accessCode: accessCode
+        }
+      });
+
+      if (error) {
+        throw new Error('Failed to create invite link');
+      }
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to create invite link');
+      }
+
+      // Insert link via Edge Function (will deduct credit automatically)
+      const { data: insertResponse, error: insertError } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'insert-link',
+          data: {
+            group_id: selectedGroup,
+            group_name: selectedGroupData?.name || null,
+            invite_link: data.invite_link,
+            status: 'active',
+            access_code: accessCode,
+            expires_at: data.expire_date 
+              ? new Date(data.expire_date * 1000).toISOString() 
+              : null,
+          }
+        }
+      });
+
+      if (insertError || !insertResponse?.success) {
+        throw new Error(insertResponse?.error || 'Failed to insert link');
+      }
+
+      const insertedLink = insertResponse.data;
+
+      await logActivity('generate_link', 'invite_link', insertedLink.id, {
+        group_id: selectedGroup,
+        group_name: selectedGroupData?.name,
+        access_code: accessCode,
+        reseller: true,
+      }, codeUser.accessCode);
+
+      setGeneratedLink(insertedLink);
+      setShowWelcomeDialog(true);
+      setCopied(false);
+      
+      toast.success('Invite link generated! 1 credit used.');
+      loadData();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to generate link');
+    }
+
+    setGenerating(false);
   }
 
   async function generateLink() {
@@ -864,8 +964,8 @@ export default function Links() {
     );
   }
 
-  // User view - only show their link
-  if (codeUser && !isAdmin) {
+  // User view - only show their link (not admin, not reseller)
+  if (codeUser && !isAdmin && !isReseller) {
     return (
       <div className="space-y-8 animate-fade-in">
         <div>
@@ -1008,7 +1108,166 @@ export default function Links() {
     );
   }
 
-  // Admin view
+  // Reseller view - simplified with credits info
+  if (isReseller) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Invite Links</h1>
+            <p className="text-muted-foreground mt-1">Generate invite links for your clients</p>
+          </div>
+          <Button variant="outline" size="icon" onClick={loadData}>
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        </div>
+
+        {/* Credits Info */}
+        <Card className="glass border-primary/30 bg-primary/5">
+          <CardContent className="flex items-center justify-between pt-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Available Credits</p>
+                <p className="text-2xl font-bold text-primary">{codeUser?.credits || 0}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Group</p>
+              <p className="font-semibold text-foreground">{groups[0]?.name || 'Not assigned'}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Generate Link Card */}
+        <Card className="glass">
+          <CardHeader>
+            <CardTitle>Generate New Link</CardTitle>
+            <CardDescription>Create a single-use invite link (uses 1 credit)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={generateResellerLink} 
+              disabled={generating || !codeUser?.credits || codeUser.credits < 1}
+              className="w-full md:w-auto"
+            >
+              {generating ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 mr-2" />
+              )}
+              Generate Link (1 Credit)
+            </Button>
+            {(!codeUser?.credits || codeUser.credits < 1) && (
+              <p className="text-sm text-destructive mt-2">
+                No credits available. Contact admin to add more credits.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Welcome Message Dialog */}
+        <Dialog open={showWelcomeDialog} onOpenChange={setShowWelcomeDialog}>
+          <DialogContent className="glass max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-primary" />
+                Link Generated Successfully!
+              </DialogTitle>
+              <DialogDescription>
+                Copy this welcome message to send to your customer
+              </DialogDescription>
+            </DialogHeader>
+            
+            {generatedLink && (
+              <div className="space-y-4">
+                <Textarea
+                  readOnly
+                  value={getWelcomeMessage(generatedLink)}
+                  className="min-h-[200px] bg-muted/30 font-mono text-sm"
+                />
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <Button onClick={copyWelcomeMessage} className="glow-sm">
+                    {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                    {copied ? 'Copied!' : 'Copy Message'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowWelcomeDialog(false)}>
+                    Close
+                  </Button>
+                </div>
+
+                <div className="p-3 rounded-lg bg-muted/20 border border-border">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Access Code:</span>
+                    <div className="flex items-center gap-2">
+                      <code className="font-mono font-bold text-foreground">{generatedLink.access_code}</code>
+                      <Button 
+                        size="sm" 
+                        variant="ghost"
+                        onClick={() => copyText(generatedLink.access_code!, 'Code')}
+                      >
+                        <Copy className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Links List */}
+        <Card className="glass">
+          <CardHeader>
+            <CardTitle>Your Generated Links ({links.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {links.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">
+                No links generated yet. Use the button above to create your first link.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {links.map((link) => (
+                  <div
+                    key={link.id}
+                    className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <code className="font-mono text-sm bg-primary/10 text-primary px-2 py-0.5 rounded">
+                          {link.access_code}
+                        </code>
+                        {getStatusBadge(link.status || 'active')}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => copyText(link.invite_link, 'Link')}>
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" asChild>
+                        <a href={link.invite_link} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Admin view - no settings
   if (!hasSettings) {
     return (
       <div className="space-y-8 animate-fade-in">
