@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Key, RefreshCw, Copy, Plus, Trash2, Eye, EyeOff, UserCog, Users, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
+import { z } from 'zod';
 
 interface AdminCode {
   id: string;
@@ -18,6 +19,13 @@ interface AdminCode {
   last_used_at: string | null;
   is_active: boolean;
 }
+
+// Validation schema
+const adminCodeSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
+  code: z.string().trim().min(6, 'Code must be at least 6 characters').max(20, 'Code must be less than 20 characters')
+    .regex(/^[A-Z0-9]+$/, 'Code must only contain uppercase letters and numbers'),
+});
 
 function generateCode(length: number = 10): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -38,6 +46,7 @@ export default function AdminCodes() {
   const [newCode, setNewCode] = useState('');
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [formErrors, setFormErrors] = useState<{ name?: string; code?: string }>({});
 
   useEffect(() => {
     loadAdmins();
@@ -57,37 +66,45 @@ export default function AdminCodes() {
 
   const handleGenerateCode = () => {
     setNewCode(generateCode());
+    if (formErrors.code) setFormErrors(prev => ({ ...prev, code: undefined }));
   };
 
   const handleCreateAdmin = async () => {
-    if (!newName.trim()) {
-      toast.error('Name is required');
+    // Validate input
+    const result = adminCodeSchema.safeParse({ 
+      name: newName, 
+      code: newCode.toUpperCase() 
+    });
+    
+    if (!result.success) {
+      const errors: { name?: string; code?: string } = {};
+      result.error.errors.forEach(err => {
+        if (err.path[0] === 'name') errors.name = err.message;
+        if (err.path[0] === 'code') errors.code = err.message;
+      });
+      setFormErrors(errors);
       return;
     }
 
-    if (!newCode.trim() || newCode.length < 6) {
-      toast.error('Code must be at least 6 characters');
-      return;
-    }
-
+    setFormErrors({});
     setCreating(true);
 
     try {
       const { error } = await supabase
         .from('admin_codes')
         .insert({
-          name: newName.trim(),
-          code: newCode.toUpperCase(),
+          name: result.data.name,
+          code: result.data.code,
         });
 
       if (error) {
         if (error.code === '23505') {
-          toast.error('This code already exists. Generate a new one.');
+          setFormErrors({ code: 'This code already exists. Generate a new one.' });
         } else {
           throw error;
         }
       } else {
-        toast.success(`Admin "${newName}" created!`);
+        toast.success(`Admin "${result.data.name}" created!`);
         setNewName('');
         setNewCode('');
         setDialogOpen(false);
@@ -153,9 +170,16 @@ export default function AdminCodes() {
           <h1 className="text-3xl font-bold text-foreground">Admin Management</h1>
           <p className="text-muted-foreground mt-1">Create and manage admin access codes</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (open) {
+            setNewCode(generateCode());
+          } else {
+            setFormErrors({});
+          }
+        }}>
           <DialogTrigger asChild>
-            <Button className="glow-sm" onClick={() => { setNewCode(generateCode()); setDialogOpen(true); }}>
+            <Button className="glow-sm">
               <Plus className="w-4 h-4 mr-2" />
               Add Admin
             </Button>
@@ -174,9 +198,16 @@ export default function AdminCodes() {
                   id="name"
                   placeholder="e.g. John, Manager, etc."
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="bg-input"
+                  onChange={(e) => {
+                    setNewName(e.target.value);
+                    if (formErrors.name) setFormErrors(prev => ({ ...prev, name: undefined }));
+                  }}
+                  className={`bg-input ${formErrors.name ? 'border-destructive' : ''}`}
+                  maxLength={100}
                 />
+                {formErrors.name && (
+                  <p className="text-sm text-destructive">{formErrors.name}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="code">Access Code</Label>
@@ -185,13 +216,20 @@ export default function AdminCodes() {
                     id="code"
                     placeholder="Access code"
                     value={newCode}
-                    onChange={(e) => setNewCode(e.target.value.toUpperCase())}
-                    className="bg-input font-mono tracking-wider uppercase"
+                    onChange={(e) => {
+                      setNewCode(e.target.value.toUpperCase());
+                      if (formErrors.code) setFormErrors(prev => ({ ...prev, code: undefined }));
+                    }}
+                    className={`bg-input font-mono tracking-wider uppercase ${formErrors.code ? 'border-destructive' : ''}`}
+                    maxLength={20}
                   />
                   <Button variant="outline" size="icon" onClick={handleGenerateCode}>
                     <RefreshCw className="w-4 h-4" />
                   </Button>
                 </div>
+                {formErrors.code && (
+                  <p className="text-sm text-destructive">{formErrors.code}</p>
+                )}
               </div>
             </div>
             <DialogFooter>
