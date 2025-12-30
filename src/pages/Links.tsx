@@ -550,13 +550,43 @@ export default function Links() {
     setSubmittingTicket(false);
   }
 
-  function openEditClientDialog(link: InviteLink) {
+  async function openEditClientDialog(link: InviteLink) {
     setEditClientTarget(link);
     setClientEmail(link.client_email || '');
     setClientId(link.client_id || '');
     setClientNote(link.note || '');
     setReceiptFile(null);
-    setReceiptPreview(link.receipt_url || null);
+    
+    // Get signed URL for existing receipt if present
+    if (link.receipt_url && codeUser?.accessCode) {
+      try {
+        const { data, error } = await supabase.functions.invoke('receipt-storage', {
+          body: { filePath: link.receipt_url, adminCode: codeUser.accessCode },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        // Handle query param approach
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/receipt-storage?action=get-signed-url`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filePath: link.receipt_url, adminCode: codeUser.accessCode }),
+          }
+        );
+        const result = await response.json();
+        if (result.success && result.url) {
+          setReceiptPreview(result.url);
+        } else {
+          setReceiptPreview(null);
+        }
+      } catch (e) {
+        console.error('Failed to get signed URL for receipt:', e);
+        setReceiptPreview(null);
+      }
+    } else {
+      setReceiptPreview(null);
+    }
   }
 
   function handleReceiptSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -575,9 +605,31 @@ export default function Links() {
     }
   }
 
-  function clearReceipt() {
+  async function clearReceipt() {
     setReceiptFile(null);
-    setReceiptPreview(editClientTarget?.receipt_url || null);
+    // Reload signed URL for existing receipt
+    if (editClientTarget?.receipt_url && codeUser?.accessCode) {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/receipt-storage?action=get-signed-url`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filePath: editClientTarget.receipt_url, adminCode: codeUser.accessCode }),
+          }
+        );
+        const result = await response.json();
+        if (result.success && result.url) {
+          setReceiptPreview(result.url);
+        } else {
+          setReceiptPreview(null);
+        }
+      } catch (e) {
+        setReceiptPreview(null);
+      }
+    } else {
+      setReceiptPreview(null);
+    }
   }
 
   async function saveClientInfo() {
@@ -588,23 +640,31 @@ export default function Links() {
     try {
       let receiptUrl = editClientTarget.receipt_url;
 
-      // Upload receipt if a new file was selected
-      if (receiptFile) {
+      // Upload receipt via edge function if a new file was selected
+      if (receiptFile && codeUser?.accessCode) {
         setUploadingReceipt(true);
-        const fileExt = receiptFile.name.split('.').pop();
-        const fileName = `${editClientTarget.id}-${Date.now()}.${fileExt}`;
         
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('receipts')
-          .upload(fileName, receiptFile, { upsert: true });
+        const formData = new FormData();
+        formData.append('file', receiptFile);
+        formData.append('linkId', editClientTarget.id);
+        formData.append('adminCode', codeUser.accessCode);
+        
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/receipt-storage?action=upload`,
+          {
+            method: 'POST',
+            body: formData,
+          }
+        );
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Upload failed');
+        }
 
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from('receipts')
-          .getPublicUrl(fileName);
-
-        receiptUrl = urlData.publicUrl;
+        // Store the filename for future signed URL generation
+        receiptUrl = result.fileName;
         setUploadingReceipt(false);
       }
 
