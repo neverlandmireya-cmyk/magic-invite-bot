@@ -4,7 +4,7 @@ import { Sidebar } from './Sidebar';
 import { Loader2 } from 'lucide-react';
 
 export function DashboardLayout() {
-  const { loading, codeUser, isAdmin } = useAuth();
+  const { loading, codeUser, isAdmin, isReseller } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -20,9 +20,17 @@ export function DashboardLayout() {
     return <Navigate to="/auth" replace />;
   }
 
-  // Code user trying to access admin-only pages
+  // Define allowed paths based on user role
+  const resellerAllowedPaths = ['/reseller', '/links', '/activity', '/support'];
   const userAllowedPaths = ['/links', '/support'];
-  if (!isAdmin && !userAllowedPaths.includes(location.pathname)) {
+
+  // Reseller trying to access paths they shouldn't
+  if (isReseller && !resellerAllowedPaths.includes(location.pathname)) {
+    return <Navigate to="/reseller" replace />;
+  }
+
+  // Regular user trying to access admin/reseller pages
+  if (!isAdmin && !isReseller && !userAllowedPaths.includes(location.pathname)) {
     return <Navigate to="/links" replace />;
   }
 
