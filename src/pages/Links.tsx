@@ -709,6 +709,8 @@ If you need support, access the dashboard and visit the Support section.`;
         return <Badge variant="outline" className="border-orange-500 text-orange-500">Removed</Badge>;
       case 'banned':
         return <Badge variant="outline" className="border-destructive text-destructive">Banned</Badge>;
+      case 'closed_by_telegram':
+        return <Badge variant="outline" className="border-sky-500 text-sky-500">Closed by TG</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
