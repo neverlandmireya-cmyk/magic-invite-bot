@@ -30,11 +30,14 @@ interface ActivityLog {
 }
 
 export default function ActivityLogs() {
-  const { codeUser } = useAuth();
+  const { codeUser, isAdmin, isReseller } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'member_joined' | 'member_left' | 'auto_revoke_on_leave'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Check access
+  const hasAccess = isAdmin || isReseller;
 
   async function fetchLogs() {
     if (!codeUser?.accessCode) {
@@ -125,12 +128,22 @@ export default function ActivityLogs() {
   const leftCount = filteredLogs.filter(l => l.action === 'member_left').length;
   const revokedCount = filteredLogs.filter(l => l.action === 'auto_revoke_on_leave').length;
 
+  if (!hasAccess) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Access denied.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Activity Logs</h1>
-          <p className="text-muted-foreground mt-1">Member joins, leaves, and auto-revokes from Telegram</p>
+          <p className="text-muted-foreground mt-1">
+            {isReseller ? 'Your links activity' : 'Member joins, leaves, and auto-revokes from Telegram'}
+          </p>
         </div>
         <Button variant="outline" size="icon" onClick={fetchLogs} disabled={loading}>
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

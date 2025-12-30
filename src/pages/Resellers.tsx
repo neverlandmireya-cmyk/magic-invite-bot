@@ -98,8 +98,8 @@ export default function Resellers() {
 
   const generateCode = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = 'RS';
-    for (let i = 0; i < 6; i++) {
+    let code = '';
+    for (let i = 0; i < 12; i++) {
       code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return code;

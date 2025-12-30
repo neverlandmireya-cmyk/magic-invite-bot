@@ -12,15 +12,19 @@ interface Stats {
 }
 
 export default function ResellerDashboard() {
-  const { codeUser, refreshUser } = useAuth();
+  const { codeUser, refreshUser, isReseller } = useAuth();
   const [stats, setStats] = useState<Stats>({ total: 0, active: 0, used: 0, expired: 0 });
   const [credits, setCredits] = useState(0);
   const [groupName, setGroupName] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchStats();
-  }, [codeUser]);
+    if (codeUser?.accessCode && isReseller) {
+      fetchStats();
+    } else if (codeUser && !isReseller) {
+      setLoading(false);
+    }
+  }, [codeUser, isReseller]);
 
   const fetchStats = async () => {
     if (!codeUser?.accessCode) {
@@ -28,17 +32,23 @@ export default function ResellerDashboard() {
       return;
     }
 
+    setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('data-api', {
         body: { code: codeUser.accessCode, action: 'get-reseller-dashboard' }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching reseller dashboard:', error);
+        throw error;
+      }
 
       if (data?.success) {
         setStats(data.stats);
         setCredits(data.credits || 0);
         setGroupName(data.groupName || '');
+      } else {
+        console.error('Failed to fetch reseller data:', data?.error);
       }
     } catch (error) {
       console.error('Failed to fetch reseller stats:', error);
@@ -53,6 +63,14 @@ export default function ResellerDashboard() {
     { label: 'Used', value: stats.used, icon: CheckCircle, color: 'text-success' },
     { label: 'Expired', value: stats.expired, icon: XCircle, color: 'text-muted-foreground' },
   ];
+
+  if (!isReseller) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Access denied. Reseller access required.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
