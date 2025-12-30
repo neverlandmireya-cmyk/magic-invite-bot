@@ -65,8 +65,9 @@ export default function Links() {
   const [generatedLink, setGeneratedLink] = useState<InviteLink | null>(null);
   const [copied, setCopied] = useState(false);
   
-  // Search
+  // Search and filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [prohibitedFilter, setProhibitedFilter] = useState<'all' | 'removed' | 'banned'>('all');
   
   // Delete/Ban/Revoke/Regenerate/Unban confirmation
   const [deleteTarget, setDeleteTarget] = useState<InviteLink | null>(null);
@@ -443,10 +444,17 @@ export default function Links() {
     setSubmittingTicket(false);
   }
 
-  // Separate active, revoked (link removed), and banned (user banned) links
+  // Separate active and prohibited (removed + banned) links
   const activeLinks = links.filter(link => link.status !== 'revoked' && link.status !== 'banned');
   const revokedLinks = links.filter(link => link.status === 'revoked');
   const bannedLinks = links.filter(link => link.status === 'banned');
+  
+  // Combined prohibited links based on filter
+  const prohibitedLinks = prohibitedFilter === 'all' 
+    ? [...revokedLinks, ...bannedLinks]
+    : prohibitedFilter === 'removed' 
+      ? revokedLinks 
+      : bannedLinks;
 
   // Filter links based on search
   const filteredActiveLinks = activeLinks.filter(link => {
@@ -459,17 +467,7 @@ export default function Links() {
     );
   });
 
-  const filteredRevokedLinks = revokedLinks.filter(link => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      link.access_code?.toLowerCase().includes(query) ||
-      link.group_name?.toLowerCase().includes(query) ||
-      link.invite_link.toLowerCase().includes(query)
-    );
-  });
-
-  const filteredBannedLinks = bannedLinks.filter(link => {
+  const filteredProhibitedLinks = prohibitedLinks.filter(link => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -912,18 +910,11 @@ If you need support, access the dashboard and visit the Support section.`;
                 <Badge variant="secondary" className="ml-1 text-xs">{activeLinks.length}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="removed" className="gap-2">
-              <Unlink className="w-4 h-4" />
-              Removed
-              {revokedLinks.length > 0 && (
-                <Badge variant="outline" className="ml-1 text-xs border-orange-500 text-orange-500">{revokedLinks.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="banned" className="gap-2">
+            <TabsTrigger value="prohibited" className="gap-2">
               <ShieldOff className="w-4 h-4" />
-              Banned
-              {bannedLinks.length > 0 && (
-                <Badge variant="destructive" className="ml-1 text-xs">{bannedLinks.length}</Badge>
+              Prohibited
+              {(revokedLinks.length + bannedLinks.length) > 0 && (
+                <Badge variant="destructive" className="ml-1 text-xs">{revokedLinks.length + bannedLinks.length}</Badge>
               )}
             </TabsTrigger>
           </TabsList>
@@ -1059,31 +1050,66 @@ If you need support, access the dashboard and visit the Support section.`;
           </Card>
         </TabsContent>
 
-        {/* Removed Links Tab */}
-        <TabsContent value="removed">
-          <Card className="glass border-orange-500/30">
+        {/* Prohibited Links Tab (Combined Removed + Banned) */}
+        <TabsContent value="prohibited">
+          <Card className="glass border-destructive/30">
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <Unlink className="w-5 h-5 text-orange-500" />
-                <div>
-                  <CardTitle>Removed Links</CardTitle>
-                  <CardDescription>{filteredRevokedLinks.length} of {revokedLinks.length} removed links</CardDescription>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldOff className="w-5 h-5 text-destructive" />
+                  <div>
+                    <CardTitle>Prohibited Codes</CardTitle>
+                    <CardDescription>{filteredProhibitedLinks.length} of {revokedLinks.length + bannedLinks.length} codes</CardDescription>
+                  </div>
+                </div>
+                {/* Filter buttons */}
+                <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+                  <Button
+                    variant={prohibitedFilter === 'all' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setProhibitedFilter('all')}
+                    className="text-xs h-7 px-2"
+                  >
+                    All ({revokedLinks.length + bannedLinks.length})
+                  </Button>
+                  <Button
+                    variant={prohibitedFilter === 'removed' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setProhibitedFilter('removed')}
+                    className="text-xs h-7 px-2 text-orange-500"
+                  >
+                    <Unlink className="w-3 h-3 mr-1" />
+                    Removed ({revokedLinks.length})
+                  </Button>
+                  <Button
+                    variant={prohibitedFilter === 'banned' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setProhibitedFilter('banned')}
+                    className="text-xs h-7 px-2 text-destructive"
+                  >
+                    <Ban className="w-3 h-3 mr-1" />
+                    Banned ({bannedLinks.length})
+                  </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              {filteredRevokedLinks.length === 0 ? (
+              {filteredProhibitedLinks.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
-                  {revokedLinks.length === 0 
-                    ? 'No removed links yet.'
-                    : 'No removed links match your search.'}
+                  {(revokedLinks.length + bannedLinks.length) === 0 
+                    ? 'No prohibited codes yet.'
+                    : 'No codes match your search or filter.'}
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {filteredRevokedLinks.map((link) => (
+                  {filteredProhibitedLinks.map((link) => (
                     <div
                       key={link.id}
-                      className="flex items-center justify-between p-4 rounded-lg bg-orange-500/10 border border-orange-500/30"
+                      className={`flex items-center justify-between p-4 rounded-lg border ${
+                        link.status === 'banned' 
+                          ? 'bg-destructive/10 border-destructive/30' 
+                          : 'bg-orange-500/10 border-orange-500/30'
+                      }`}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-1">
@@ -1094,7 +1120,11 @@ If you need support, access the dashboard and visit the Support section.`;
                         </div>
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           {link.access_code && (
-                            <span className="font-mono bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded">
+                            <span className={`font-mono px-2 py-0.5 rounded ${
+                              link.status === 'banned' 
+                                ? 'bg-destructive/10 text-destructive' 
+                                : 'bg-orange-500/10 text-orange-500'
+                            }`}>
                               {link.access_code}
                             </span>
                           )}
@@ -1102,97 +1132,25 @@ If you need support, access the dashboard and visit the Support section.`;
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        {/* Regenerate - restore with new link */}
-                        {link.access_code && (
+                        {/* Unban - only for banned users */}
+                        {link.status === 'banned' && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setRegenerateTarget(link)}
-                            title="Generate new link (same code)"
+                            onClick={() => setUnbanTarget(link)}
+                            title="Unban user (move to Removed)"
                             className="text-success hover:text-success"
                           >
-                            <RefreshCw className="w-4 h-4" />
+                            <ShieldCheck className="w-4 h-4" />
                           </Button>
                         )}
-                        {/* Delete from panel only */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteTarget(link)}
-                          title="Delete from panel"
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Banned Links Tab */}
-        <TabsContent value="banned">
-          <Card className="glass border-destructive/30">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <ShieldOff className="w-5 h-5 text-destructive" />
-                <div>
-                  <CardTitle>Banned Users</CardTitle>
-                  <CardDescription>{filteredBannedLinks.length} of {bannedLinks.length} banned users</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {filteredBannedLinks.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">
-                  {bannedLinks.length === 0 
-                    ? 'No banned users yet.'
-                    : 'No banned users match your search.'}
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {filteredBannedLinks.map((link) => (
-                    <div
-                      key={link.id}
-                      className="flex items-center justify-between p-4 rounded-lg bg-destructive/10 border border-destructive/30"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 mb-1">
-                          <span className="text-sm font-medium text-foreground">
-                            {link.group_name || 'Group'}
-                          </span>
-                          {getStatusBadge(link.status)}
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          {link.access_code && (
-                            <span className="font-mono bg-destructive/10 text-destructive px-2 py-0.5 rounded">
-                              {link.access_code}
-                            </span>
-                          )}
-                          <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {/* Unban - move to removed section */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setUnbanTarget(link)}
-                          title="Unban user"
-                          className="text-success hover:text-success"
-                        >
-                          <ShieldCheck className="w-4 h-4" />
-                        </Button>
                         {/* Regenerate - restore access with new link */}
                         {link.access_code && (
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => setRegenerateTarget(link)}
-                            title="Unban + Generate new link"
+                            title="Generate new link (same code)"
                             className="text-primary hover:text-primary"
                           >
                             <RefreshCw className="w-4 h-4" />
