@@ -1031,16 +1031,6 @@ If you need support, access the dashboard and visit the Support section.`;
                         >
                           <Ban className="w-4 h-4" />
                         </Button>
-                        {/* Delete from panel only */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteTarget(link)}
-                          title="Delete from panel only"
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
                       </div>
                     </div>
                   ))}
@@ -1156,16 +1146,6 @@ If you need support, access the dashboard and visit the Support section.`;
                             <RefreshCw className="w-4 h-4" />
                           </Button>
                         )}
-                        {/* Delete from panel only */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteTarget(link)}
-                          title="Delete from panel"
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
                       </div>
                     </div>
                   ))}
