@@ -28,17 +28,9 @@ export default function Dashboard() {
   const [recentRevenue, setRecentRevenue] = useState<RevenueEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Redirect non-admins
-  if (!authLoading && !isAdmin) {
-    if (isReseller) {
-      return <Navigate to="/reseller" replace />;
-    }
-    return <Navigate to="/links" replace />;
-  }
-
   useEffect(() => {
     async function fetchStats() {
-      if (!codeUser?.accessCode) {
+      if (!codeUser?.accessCode || !isAdmin) {
         setLoading(false);
         return;
       }
@@ -63,7 +55,7 @@ export default function Dashboard() {
     }
 
     fetchStats();
-  }, [codeUser]);
+  }, [codeUser, isAdmin]);
 
   const statCards = [
     { label: 'Total Links', value: stats.total, icon: Link2, color: 'text-primary' },
@@ -71,6 +63,14 @@ export default function Dashboard() {
     { label: 'Used', value: stats.used, icon: CheckCircle, color: 'text-success' },
     { label: 'Expired', value: stats.expired, icon: XCircle, color: 'text-muted-foreground' },
   ];
+
+  // Redirect non-admins after hooks
+  if (!authLoading && !isAdmin) {
+    if (isReseller) {
+      return <Navigate to="/reseller" replace />;
+    }
+    return <Navigate to="/links" replace />;
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">

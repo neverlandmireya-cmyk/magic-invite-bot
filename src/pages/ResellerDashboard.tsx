@@ -19,14 +19,6 @@ export default function ResellerDashboard() {
   const [groupName, setGroupName] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Redirect non-resellers
-  if (!authLoading && !isReseller) {
-    if (isAdmin) {
-      return <Navigate to="/" replace />;
-    }
-    return <Navigate to="/links" replace />;
-  }
-
   useEffect(() => {
     if (codeUser?.accessCode && isReseller) {
       fetchStats();
@@ -72,6 +64,14 @@ export default function ResellerDashboard() {
     { label: 'Used', value: stats.used, icon: CheckCircle, color: 'text-success' },
     { label: 'Expired', value: stats.expired, icon: XCircle, color: 'text-muted-foreground' },
   ];
+
+  // Redirect non-resellers after hooks
+  if (!authLoading && !isReseller) {
+    if (isAdmin) {
+      return <Navigate to="/" replace />;
+    }
+    return <Navigate to="/links" replace />;
+  }
 
   if (authLoading) {
     return (

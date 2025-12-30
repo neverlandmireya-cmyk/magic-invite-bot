@@ -37,15 +37,10 @@ export default function ActivityLogs() {
   const [filter, setFilter] = useState<'all' | 'member_joined' | 'member_left' | 'auto_revoke_on_leave'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Check access - redirect regular users
   const hasAccess = isAdmin || isReseller;
-  
-  if (!authLoading && !hasAccess) {
-    return <Navigate to="/links" replace />;
-  }
 
   async function fetchLogs() {
-    if (!codeUser?.accessCode) {
+    if (!codeUser?.accessCode || !hasAccess) {
       setLoading(false);
       return;
     }
@@ -74,8 +69,10 @@ export default function ActivityLogs() {
   }
 
   useEffect(() => {
-    fetchLogs();
-  }, [filter, codeUser]);
+    if (hasAccess) {
+      fetchLogs();
+    }
+  }, [filter, codeUser, hasAccess]);
 
   function getActivityIcon(action: string) {
     switch (action) {
@@ -132,6 +129,11 @@ export default function ActivityLogs() {
   const joinedCount = filteredLogs.filter(l => l.action === 'member_joined').length;
   const leftCount = filteredLogs.filter(l => l.action === 'member_left').length;
   const revokedCount = filteredLogs.filter(l => l.action === 'auto_revoke_on_leave').length;
+
+  // Redirect regular users after hooks
+  if (!authLoading && !hasAccess) {
+    return <Navigate to="/links" replace />;
+  }
 
   if (authLoading) {
     return (
