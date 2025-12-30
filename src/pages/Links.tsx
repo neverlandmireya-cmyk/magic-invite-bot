@@ -432,7 +432,7 @@ export default function Links() {
     setRegenerating(false);
   }
 
-  // Ban link - revoke on Telegram AND mark as BANNED in panel (blocks access code)
+  // Ban link - revoke on Telegram AND mark as BANNED in panel (blocks access code) AND remove revenue
   async function banLink(link: InviteLink) {
     try {
       if (codeUser?.accessCode && link.group_id && link.invite_link) {
@@ -451,6 +451,14 @@ export default function Links() {
         }
       }
 
+      // Delete associated revenue entries
+      if (link.access_code) {
+        await supabase
+          .from('revenue')
+          .delete()
+          .eq('access_code', link.access_code);
+      }
+
       const { error } = await supabase
         .from('invite_links')
         .update({ status: 'banned' })
@@ -463,9 +471,10 @@ export default function Links() {
         group_name: link.group_name,
         previous_status: link.status,
         revoked_on_telegram: true,
+        revenue_deleted: true,
       }, codeUser?.accessCode || 'unknown');
 
-      toast.success('User banned - access code blocked');
+      toast.success('User banned - access code blocked, revenue removed');
       setBanTarget(null);
       loadData();
     } catch (error: any) {
