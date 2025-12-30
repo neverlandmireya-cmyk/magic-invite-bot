@@ -1,40 +1,65 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Save, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Save, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function Settings() {
+  const { codeUser } = useAuth();
   const [botToken, setBotToken] = useState('');
+  const [botTokenMasked, setBotTokenMasked] = useState('');
+  const [botTokenSet, setBotTokenSet] = useState(false);
   const [groupIds, setGroupIds] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadSettings() {
-      const { data } = await supabase
-        .from('settings')
-        .select('key, value');
+    loadSettings();
+  }, [codeUser]);
 
-      if (data) {
-        data.forEach((setting) => {
-          if (setting.key === 'bot_token') setBotToken(setting.value);
-          if (setting.key === 'group_ids') setGroupIds(setting.value);
-        });
-      }
+  async function loadSettings() {
+    if (!codeUser?.accessCode) {
       setLoading(false);
+      return;
     }
 
-    loadSettings();
-  }, []);
+    try {
+      const { data, error } = await supabase.functions.invoke('manage-settings', {
+        body: { 
+          action: 'get',
+          adminCode: codeUser.accessCode
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.success && data.settings) {
+        setBotTokenSet(data.settings.bot_token_set === 'true');
+        setBotTokenMasked(data.settings.bot_token_masked || '');
+        setGroupIds(data.settings.group_ids || '');
+      }
+    } catch (error) {
+      console.error('Failed to load settings');
+      toast.error('Failed to load settings');
+    }
+
+    setLoading(false);
+  }
 
   const handleSave = async () => {
-    if (!botToken.trim()) {
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    // If no new token is entered but one exists, only update group IDs
+    if (!botToken.trim() && !botTokenSet) {
       toast.error('Bot token is required');
       return;
     }
@@ -42,17 +67,26 @@ export default function Settings() {
     setSaving(true);
 
     try {
-      await supabase
-        .from('settings')
-        .upsert({ key: 'bot_token', value: botToken }, { onConflict: 'key' });
+      const { data, error } = await supabase.functions.invoke('manage-settings', {
+        body: { 
+          action: 'save',
+          adminCode: codeUser.accessCode,
+          botToken: botToken.trim() || undefined, // Only send if user entered new token
+          groupIds: groupIds
+        }
+      });
 
-      await supabase
-        .from('settings')
-        .upsert({ key: 'group_ids', value: groupIds }, { onConflict: 'key' });
+      if (error) throw error;
 
-      toast.success('Settings saved successfully');
-    } catch (error) {
-      toast.error('Failed to save settings');
+      if (data?.success) {
+        toast.success('Settings saved successfully');
+        setBotToken(''); // Clear the input after save
+        loadSettings(); // Reload to get updated masked token
+      } else {
+        throw new Error(data?.error || 'Failed to save');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save settings');
     }
 
     setSaving(false);
@@ -79,11 +113,19 @@ export default function Settings() {
         <CardContent className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="token">Bot Token</Label>
+            
+            {botTokenSet && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                <span>Token configured: {botTokenMasked}</span>
+              </div>
+            )}
+            
             <div className="relative">
               <Input
                 id="token"
                 type={showToken ? 'text' : 'password'}
-                placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+                placeholder={botTokenSet ? "Enter new token to replace..." : "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"}
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
                 className="pr-10 bg-input font-mono text-sm"
@@ -97,7 +139,7 @@ export default function Settings() {
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Get this from @BotFather on Telegram
+              Get this from @BotFather on Telegram. {botTokenSet && "Leave empty to keep current token."}
             </p>
           </div>
 
@@ -105,13 +147,13 @@ export default function Settings() {
             <Label htmlFor="groups">Group/Channel IDs</Label>
             <Textarea
               id="groups"
-              placeholder="-1001234567890&#10;-1009876543210"
+              placeholder='[{"id":"-1001234567890","name":"Group Name"}]'
               value={groupIds}
               onChange={(e) => setGroupIds(e.target.value)}
               className="bg-input font-mono text-sm min-h-[120px]"
             />
             <p className="text-xs text-muted-foreground">
-              One ID per line. Use @userinfobot or similar to get group/channel IDs.
+              JSON array format: {`[{"id":"-100xxx","name":"Name"}]`}. Use @userinfobot to get IDs.
             </p>
           </div>
 
