@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface InviteLink {
@@ -70,6 +70,10 @@ export default function Links() {
   // Delete/Ban confirmation
   const [deleteTarget, setDeleteTarget] = useState<InviteLink | null>(null);
   const [banTarget, setBanTarget] = useState<InviteLink | null>(null);
+  
+  // Account deleted dialog
+  const [showAccountDeletedDialog, setShowAccountDeletedDialog] = useState(false);
+  const [submittingTicket, setSubmittingTicket] = useState(false);
 
   const dashboardUrl = 'https://login.exylus.net';
 
@@ -253,6 +257,34 @@ export default function Links() {
     }
   }
 
+  async function submitAccountDeletedTicket() {
+    if (!codeUser?.accessCode) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    setSubmittingTicket(true);
+
+    try {
+      const { error } = await supabase.from('tickets').insert({
+        access_code: codeUser.accessCode,
+        subject: 'Account Deletion Request',
+        message: `Hello, my Telegram account was deleted and I need assistance to regain access to the group. My access code is: ${codeUser.accessCode}. Please help me resolve this issue.`,
+        priority: 'high',
+        status: 'open',
+      });
+
+      if (error) throw error;
+
+      toast.success('Ticket submitted successfully! We will contact you soon.');
+      setShowAccountDeletedDialog(false);
+    } catch (error: any) {
+      toast.error('Failed to submit ticket. Please try again.');
+    }
+
+    setSubmittingTicket(false);
+  }
+
   // Filter links based on search
   const filteredLinks = links.filter(link => {
     if (!searchQuery) return true;
@@ -375,6 +407,65 @@ If you need support, access the dashboard and visit the Support section.`;
             </CardContent>
           </Card>
         )}
+
+        {/* Account Deleted Button */}
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="pt-6">
+            <Button 
+              variant="destructive" 
+              className="w-full"
+              onClick={() => setShowAccountDeletedDialog(true)}
+            >
+              <UserX className="w-4 h-4 mr-2" />
+              My account was deleted
+            </Button>
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              Click here if your Telegram account was deleted and you need help
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Account Deleted Dialog */}
+        <Dialog open={showAccountDeletedDialog} onOpenChange={setShowAccountDeletedDialog}>
+          <DialogContent className="glass max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <UserX className="w-5 h-5" />
+                Account Deleted?
+              </DialogTitle>
+              <DialogDescription>
+                We're sorry to hear that. Don't worry, we can help you regain access.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-muted/30 border border-border">
+                <p className="text-sm text-foreground">
+                  By clicking the button below, a support ticket will be automatically created with your access code. Our team will review your case and help you get back into the group as soon as possible.
+                </p>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button 
+                  variant="destructive" 
+                  className="flex-1"
+                  onClick={submitAccountDeletedTicket}
+                  disabled={submittingTicket}
+                >
+                  {submittingTicket ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                  )}
+                  Send Support Request
+                </Button>
+                <Button variant="outline" onClick={() => setShowAccountDeletedDialog(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
