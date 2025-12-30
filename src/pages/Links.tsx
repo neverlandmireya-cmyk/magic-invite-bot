@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff, ShieldCheck } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff, ShieldCheck, DollarSign } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 
@@ -80,6 +80,13 @@ export default function Links() {
   // Account deleted dialog
   const [showAccountDeletedDialog, setShowAccountDeletedDialog] = useState(false);
   const [submittingTicket, setSubmittingTicket] = useState(false);
+  
+  // Price input for link generation
+  const [linkPrice, setLinkPrice] = useState<string>('');
+  const [showPriceDialog, setShowPriceDialog] = useState(false);
+  
+  // Delete user (permanent)
+  const [deleteUserTarget, setDeleteUserTarget] = useState<InviteLink | null>(null);
 
   const dashboardUrl = 'https://login.exylus.net';
 
@@ -146,6 +153,15 @@ export default function Links() {
     setLoading(false);
   }
 
+  function openPriceDialog() {
+    if (!selectedGroup) {
+      toast.error('Please select a group');
+      return;
+    }
+    setLinkPrice('');
+    setShowPriceDialog(true);
+  }
+
   async function generateLink() {
     if (!selectedGroup) {
       toast.error('Please select a group');
@@ -157,7 +173,14 @@ export default function Links() {
       return;
     }
 
+    const price = parseFloat(linkPrice);
+    if (isNaN(price) || price < 0) {
+      toast.error('Please enter a valid price');
+      return;
+    }
+
     setGenerating(true);
+    setShowPriceDialog(false);
 
     try {
       // Generate the access code first so we can include it in the Telegram link name
@@ -199,11 +222,23 @@ export default function Links() {
 
       if (insertError) throw insertError;
 
+      // Add revenue record
+      if (price > 0) {
+        await supabase.from('revenue').insert({
+          link_id: insertedLink.id,
+          access_code: accessCode,
+          amount: price,
+          description: `Link generated for ${selectedGroupData?.name || selectedGroup}`,
+          created_by: codeUser.accessCode,
+        });
+      }
+
       // Log the activity
       await logActivity('generate_link', 'invite_link', insertedLink.id, {
         group_id: selectedGroup,
         group_name: selectedGroupData?.name,
         access_code: accessCode,
+        price: price,
       }, codeUser.accessCode);
 
       // Show welcome message dialog
@@ -218,6 +253,31 @@ export default function Links() {
     }
 
     setGenerating(false);
+  }
+
+  // Delete user permanently (removes from panel and all records)
+  async function deleteUserPermanently(link: InviteLink) {
+    try {
+      // Delete the link record
+      const { error } = await supabase
+        .from('invite_links')
+        .delete()
+        .eq('id', link.id);
+
+      if (error) throw error;
+
+      await logActivity('delete_user', 'invite_link', link.id, {
+        access_code: link.access_code,
+        group_name: link.group_name,
+        action: 'permanent_deletion',
+      }, codeUser?.accessCode || 'unknown');
+
+      toast.success('User deleted permanently');
+      setDeleteUserTarget(null);
+      loadData();
+    } catch (error: any) {
+      toast.error('Failed to delete user');
+    }
   }
 
   // Delete from panel only (no Telegram action)
@@ -709,7 +769,7 @@ If you need support, access the dashboard and visit the Support section.`;
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={generateLink} disabled={generating} className="glow-sm">
+            <Button onClick={openPriceDialog} disabled={generating} className="glow-sm">
               {generating ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
@@ -900,6 +960,80 @@ If you need support, access the dashboard and visit the Support section.`;
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Price Input Dialog */}
+      <Dialog open={showPriceDialog} onOpenChange={setShowPriceDialog}>
+        <DialogContent className="glass max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-success" />
+              Enter Price
+            </DialogTitle>
+            <DialogDescription>
+              How much does this link cost?
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={linkPrice}
+                onChange={(e) => setLinkPrice(e.target.value)}
+                className="pl-9 bg-input text-lg font-mono"
+                autoFocus
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                onClick={generateLink} 
+                disabled={generating}
+                className="flex-1 glow-sm"
+              >
+                {generating ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
+                Generate Link
+              </Button>
+              <Button variant="outline" onClick={() => setShowPriceDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Permanently Dialog */}
+      <AlertDialog open={!!deleteUserTarget} onOpenChange={() => setDeleteUserTarget(null)}>
+        <AlertDialogContent className="glass">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">Delete User Permanently</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this user's access. This action cannot be undone.
+              {deleteUserTarget?.access_code && (
+                <span className="block mt-2 font-mono text-foreground">{deleteUserTarget.access_code}</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteUserTarget && deleteUserPermanently(deleteUserTarget)}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Permanently
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Links with Tabs */}
       <Tabs defaultValue="active" className="w-full">
         <div className="flex items-center justify-between mb-4">
@@ -1030,6 +1164,16 @@ If you need support, access the dashboard and visit the Support section.`;
                           className="text-warning hover:text-warning"
                         >
                           <Ban className="w-4 h-4" />
+                        </Button>
+                        {/* Delete user permanently */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteUserTarget(link)}
+                          title="Delete user permanently"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
