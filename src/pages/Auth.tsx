@@ -16,7 +16,7 @@ export default function Auth() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [showBanned, setShowBanned] = useState(false);
-  const { signInWithCode, isBanned } = useAuth();
+  const { signInWithCode, isBanned, clearBannedState } = useAuth();
   const navigate = useNavigate();
 
   const handleCodeSubmit = async (e: React.FormEvent) => {
@@ -83,6 +83,7 @@ export default function Auth() {
               className="w-full"
               onClick={() => {
                 setShowBanned(false);
+                clearBannedState();
                 setCode('');
               }}
             >

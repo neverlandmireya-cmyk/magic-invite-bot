@@ -17,6 +17,7 @@ interface AuthContextType {
   isBanned: boolean;
   signInWithCode: (code: string) => Promise<{ error: Error | null; isBanned?: boolean }>;
   signOut: () => Promise<void>;
+  clearBannedState: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -159,6 +160,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsBanned(false);
   };
 
+  const clearBannedState = () => {
+    setIsBanned(false);
+  };
+
   const isAdmin = codeUser?.isAdmin ?? false;
   const isAuthenticated = !!codeUser;
 
@@ -170,7 +175,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       isBanned,
       signInWithCode,
-      signOut 
+      signOut,
+      clearBannedState
     }}>
       {children}
     </AuthContext.Provider>
