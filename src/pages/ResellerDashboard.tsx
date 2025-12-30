@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { Link2, CheckCircle, Clock, XCircle, Coins, Users } from 'lucide-react';
@@ -12,19 +13,27 @@ interface Stats {
 }
 
 export default function ResellerDashboard() {
-  const { codeUser, refreshUser, isReseller } = useAuth();
+  const { codeUser, refreshUser, isReseller, isAdmin, loading: authLoading } = useAuth();
   const [stats, setStats] = useState<Stats>({ total: 0, active: 0, used: 0, expired: 0 });
   const [credits, setCredits] = useState(0);
   const [groupName, setGroupName] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Redirect non-resellers
+  if (!authLoading && !isReseller) {
+    if (isAdmin) {
+      return <Navigate to="/" replace />;
+    }
+    return <Navigate to="/links" replace />;
+  }
+
   useEffect(() => {
     if (codeUser?.accessCode && isReseller) {
       fetchStats();
-    } else if (codeUser && !isReseller) {
+    } else if (!authLoading && codeUser && !isReseller) {
       setLoading(false);
     }
-  }, [codeUser, isReseller]);
+  }, [codeUser, isReseller, authLoading]);
 
   const fetchStats = async () => {
     if (!codeUser?.accessCode) {
@@ -64,10 +73,10 @@ export default function ResellerDashboard() {
     { label: 'Expired', value: stats.expired, icon: XCircle, color: 'text-muted-foreground' },
   ];
 
-  if (!isReseller) {
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Access denied. Reseller access required.</p>
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
