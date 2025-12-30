@@ -330,9 +330,13 @@ If you need support, access the dashboard and visit the Support section.`;
                 <CardTitle>Telegram Invite</CardTitle>
                 {getStatusBadge(userLink.status || 'active')}
               </div>
-              <CardDescription>
-                {userLink.group_name || 'Telegram Group'}
-              </CardDescription>
+              {userLink.group_name && (
+                <CardDescription className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-xs">
+                    {userLink.group_name}
+                  </Badge>
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="p-4 rounded-lg bg-muted/30 border border-border">
