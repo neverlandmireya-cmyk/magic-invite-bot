@@ -10,7 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Edit, Unlink } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 
 interface InviteLink {
@@ -417,8 +418,22 @@ export default function Links() {
     setSubmittingTicket(false);
   }
 
+  // Separate active and banned/revoked links
+  const activeLinks = links.filter(link => link.status !== 'revoked');
+  const bannedLinks = links.filter(link => link.status === 'revoked');
+
   // Filter links based on search
-  const filteredLinks = links.filter(link => {
+  const filteredActiveLinks = activeLinks.filter(link => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      link.access_code?.toLowerCase().includes(query) ||
+      link.group_name?.toLowerCase().includes(query) ||
+      link.invite_link.toLowerCase().includes(query)
+    );
+  });
+
+  const filteredBannedLinks = bannedLinks.filter(link => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -824,141 +839,230 @@ If you need support, access the dashboard and visit the Support section.`;
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Link History */}
-      <Card className="glass">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Link History</CardTitle>
-              <CardDescription>{filteredLinks.length} of {links.length} links</CardDescription>
-            </div>
-            <div className="relative w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by code..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 bg-input"
-              />
-            </div>
+      {/* Links with Tabs */}
+      <Tabs defaultValue="active" className="w-full">
+        <div className="flex items-center justify-between mb-4">
+          <TabsList className="bg-muted/50">
+            <TabsTrigger value="active" className="gap-2">
+              Invite Links
+              {activeLinks.length > 0 && (
+                <Badge variant="secondary" className="ml-1 text-xs">{activeLinks.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="banned" className="gap-2">
+              <ShieldOff className="w-4 h-4" />
+              Banned
+              {bannedLinks.length > 0 && (
+                <Badge variant="destructive" className="ml-1 text-xs">{bannedLinks.length}</Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+          <div className="relative w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 bg-input"
+            />
           </div>
-        </CardHeader>
-        <CardContent>
-          {filteredLinks.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              {links.length === 0 
-                ? 'No invite links yet. Generate your first one above!'
-                : 'No links match your search.'}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {filteredLinks.map((link) => (
-                <div
-                  key={link.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-1">
-                      <span className="text-sm font-medium text-foreground">
-                        {link.group_name || 'Group'}
-                      </span>
-                      {getStatusBadge(link.status)}
+        </div>
+
+        {/* Active Links Tab */}
+        <TabsContent value="active">
+          <Card className="glass">
+            <CardHeader>
+              <CardTitle>Active Links</CardTitle>
+              <CardDescription>{filteredActiveLinks.length} of {activeLinks.length} links</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {filteredActiveLinks.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  {activeLinks.length === 0 
+                    ? 'No active invite links. Generate your first one above!'
+                    : 'No links match your search.'}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {filteredActiveLinks.map((link) => (
+                    <div
+                      key={link.id}
+                      className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-1">
+                          <span className="text-sm font-medium text-foreground">
+                            {link.group_name || 'Group'}
+                          </span>
+                          {getStatusBadge(link.status)}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          {link.access_code && (
+                            <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded">
+                              {link.access_code}
+                            </span>
+                          )}
+                          <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {link.access_code && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setGeneratedLink(link);
+                              setShowWelcomeDialog(true);
+                              setCopied(false);
+                            }}
+                            title="Show welcome message"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => copyText(link.invite_link, 'Link')}
+                          title="Copy link"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          asChild
+                          title="Open link"
+                        >
+                          <a href={link.invite_link} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </Button>
+                        {/* Regenerate - create new link for same access code */}
+                        {link.access_code && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRegenerateTarget(link)}
+                            title="Regenerate link (new Telegram link, same code)"
+                            className="text-primary hover:text-primary"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {/* Revoke on Telegram only */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setRevokeTarget(link)}
+                          title="Revoke on Telegram only"
+                          className="text-orange-500 hover:text-orange-600"
+                        >
+                          <Unlink className="w-4 h-4" />
+                        </Button>
+                        {/* Ban - revoke on Telegram + mark as banned */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setBanTarget(link)}
+                          title="Ban (revoke on Telegram + mark banned)"
+                          className="text-warning hover:text-warning"
+                        >
+                          <Ban className="w-4 h-4" />
+                        </Button>
+                        {/* Delete from panel only */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteTarget(link)}
+                          title="Delete from panel only"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      {link.access_code && (
-                        <span className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded">
-                          {link.access_code}
-                        </span>
-                      )}
-                      <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {link.access_code && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setGeneratedLink(link);
-                          setShowWelcomeDialog(true);
-                          setCopied(false);
-                        }}
-                        title="Show welcome message"
-                      >
-                        <MessageSquare className="w-4 h-4" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => copyText(link.invite_link, 'Link')}
-                      title="Copy link"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      asChild
-                      title="Open link"
-                    >
-                      <a href={link.invite_link} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
-                    </Button>
-                    {/* Regenerate - create new link for same access code */}
-                    {link.access_code && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setRegenerateTarget(link)}
-                        title="Regenerate link (new Telegram link, same code)"
-                        className="text-primary hover:text-primary"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {/* Revoke on Telegram only */}
-                    {link.status !== 'revoked' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setRevokeTarget(link)}
-                        title="Revoke on Telegram only"
-                        className="text-orange-500 hover:text-orange-600"
-                      >
-                        <Unlink className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {/* Ban - revoke on Telegram + mark as banned */}
-                    {link.status !== 'revoked' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setBanTarget(link)}
-                        title="Ban (revoke on Telegram + mark banned)"
-                        className="text-warning hover:text-warning"
-                      >
-                        <Ban className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {/* Delete from panel only */}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteTarget(link)}
-                      title="Delete from panel only"
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Banned Links Tab */}
+        <TabsContent value="banned">
+          <Card className="glass border-destructive/30">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <ShieldOff className="w-5 h-5 text-destructive" />
+                <div>
+                  <CardTitle>Banned Users</CardTitle>
+                  <CardDescription>{filteredBannedLinks.length} of {bannedLinks.length} banned links</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {filteredBannedLinks.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  {bannedLinks.length === 0 
+                    ? 'No banned users yet.'
+                    : 'No banned links match your search.'}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {filteredBannedLinks.map((link) => (
+                    <div
+                      key={link.id}
+                      className="flex items-center justify-between p-4 rounded-lg bg-destructive/10 border border-destructive/30"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 mb-1">
+                          <span className="text-sm font-medium text-foreground">
+                            {link.group_name || 'Group'}
+                          </span>
+                          {getStatusBadge(link.status)}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          {link.access_code && (
+                            <span className="font-mono bg-destructive/10 text-destructive px-2 py-0.5 rounded">
+                              {link.access_code}
+                            </span>
+                          )}
+                          <span>{format(new Date(link.created_at), 'MMM d, yyyy HH:mm')}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {/* Regenerate - restore access with new link */}
+                        {link.access_code && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setRegenerateTarget(link)}
+                            title="Restore access (generate new link)"
+                            className="text-success hover:text-success"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {/* Delete from panel only */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteTarget(link)}
+                          title="Delete from panel"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
