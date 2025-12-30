@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff, ShieldCheck, DollarSign, UserCog, Mail, IdCard } from 'lucide-react';
+import { Plus, Copy, ExternalLink, Loader2, RefreshCw, AlertCircle, MessageSquare, Check, Search, Trash2, Ban, UserX, Unlink, ShieldOff, ShieldCheck, DollarSign, UserCog, Mail, IdCard, FileText, Upload, Image, X } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 
@@ -26,6 +26,8 @@ interface InviteLink {
   access_code: string | null;
   client_email: string | null;
   client_id: string | null;
+  receipt_url: string | null;
+  note: string | null;
 }
 
 function generateAccessCode(): string {
@@ -94,7 +96,11 @@ export default function Links() {
   const [editClientTarget, setEditClientTarget] = useState<InviteLink | null>(null);
   const [clientEmail, setClientEmail] = useState('');
   const [clientId, setClientId] = useState('');
+  const [clientNote, setClientNote] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [savingClientInfo, setSavingClientInfo] = useState(false);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
   const dashboardUrl = 'https://login.exylus.net';
 
@@ -546,6 +552,30 @@ export default function Links() {
     setEditClientTarget(link);
     setClientEmail(link.client_email || '');
     setClientId(link.client_id || '');
+    setClientNote(link.note || '');
+    setReceiptFile(null);
+    setReceiptPreview(link.receipt_url || null);
+  }
+
+  function handleReceiptSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please select an image file');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File size must be less than 5MB');
+        return;
+      }
+      setReceiptFile(file);
+      setReceiptPreview(URL.createObjectURL(file));
+    }
+  }
+
+  function clearReceipt() {
+    setReceiptFile(null);
+    setReceiptPreview(editClientTarget?.receipt_url || null);
   }
 
   async function saveClientInfo() {
@@ -554,11 +584,35 @@ export default function Links() {
     setSavingClientInfo(true);
     
     try {
+      let receiptUrl = editClientTarget.receipt_url;
+
+      // Upload receipt if a new file was selected
+      if (receiptFile) {
+        setUploadingReceipt(true);
+        const fileExt = receiptFile.name.split('.').pop();
+        const fileName = `${editClientTarget.id}-${Date.now()}.${fileExt}`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('receipts')
+          .upload(fileName, receiptFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: urlData } = supabase.storage
+          .from('receipts')
+          .getPublicUrl(fileName);
+
+        receiptUrl = urlData.publicUrl;
+        setUploadingReceipt(false);
+      }
+
       const { error } = await supabase
         .from('invite_links')
         .update({
           client_email: clientEmail.trim() || null,
           client_id: clientId.trim() || null,
+          note: clientNote.trim() || null,
+          receipt_url: receiptUrl,
         })
         .eq('id', editClientTarget.id);
 
@@ -568,6 +622,8 @@ export default function Links() {
         access_code: editClientTarget.access_code,
         client_email: clientEmail.trim() || null,
         client_id: clientId.trim() || null,
+        note: clientNote.trim() || null,
+        receipt_uploaded: !!receiptFile,
       }, codeUser?.accessCode || 'unknown');
 
       toast.success('Client info updated');
@@ -575,6 +631,7 @@ export default function Links() {
       loadData();
     } catch (error: any) {
       toast.error('Failed to update client info');
+      setUploadingReceipt(false);
     }
     
     setSavingClientInfo(false);
@@ -1112,7 +1169,7 @@ If you need support, access the dashboard and visit the Support section.`;
 
       {/* Edit Client Info Dialog */}
       <Dialog open={!!editClientTarget} onOpenChange={() => setEditClientTarget(null)}>
-        <DialogContent className="glass max-w-sm">
+        <DialogContent className="glass max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserCog className="w-5 h-5 text-primary" />
@@ -1158,19 +1215,71 @@ If you need support, access the dashboard and visit the Support section.`;
                 className="bg-input"
               />
             </div>
+
+            {/* Payment Receipt Upload */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <Image className="w-4 h-4 text-muted-foreground" />
+                Payment Receipt
+              </label>
+              
+              {receiptPreview ? (
+                <div className="relative">
+                  <img 
+                    src={receiptPreview} 
+                    alt="Receipt preview" 
+                    className="w-full h-40 object-cover rounded-lg border border-border"
+                  />
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-2 right-2 h-7 w-7"
+                    onClick={clearReceipt}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer bg-muted/20 hover:bg-muted/30 transition-colors">
+                  <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+                  <span className="text-sm text-muted-foreground">Click to upload receipt</span>
+                  <span className="text-xs text-muted-foreground/70 mt-1">PNG, JPG up to 5MB</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleReceiptSelect}
+                  />
+                </label>
+              )}
+            </div>
+
+            {/* Note */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                Note
+              </label>
+              <Textarea
+                placeholder="Add any notes about this client..."
+                value={clientNote}
+                onChange={(e) => setClientNote(e.target.value)}
+                className="bg-input min-h-[80px]"
+              />
+            </div>
             
             <div className="flex gap-2">
               <Button 
                 onClick={saveClientInfo} 
-                disabled={savingClientInfo}
+                disabled={savingClientInfo || uploadingReceipt}
                 className="flex-1 glow-sm"
               >
-                {savingClientInfo ? (
+                {(savingClientInfo || uploadingReceipt) ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
                   <Check className="w-4 h-4 mr-2" />
                 )}
-                Save
+                {uploadingReceipt ? 'Uploading...' : 'Save'}
               </Button>
               <Button variant="outline" onClick={() => setEditClientTarget(null)}>
                 Cancel
@@ -1258,6 +1367,18 @@ If you need support, access the dashboard and visit the Support section.`;
                                   {link.client_id}
                                 </span>
                               )}
+                            </span>
+                          )}
+                          {link.receipt_url && (
+                            <span className="flex items-center gap-1 text-success">
+                              <Image className="w-3 h-3" />
+                              Receipt
+                            </span>
+                          )}
+                          {link.note && (
+                            <span className="flex items-center gap-1 text-muted-foreground/80">
+                              <FileText className="w-3 h-3" />
+                              Note
                             </span>
                           )}
                         </div>
@@ -1449,6 +1570,18 @@ If you need support, access the dashboard and visit the Support section.`;
                                   {link.client_id}
                                 </span>
                               )}
+                            </span>
+                          )}
+                          {link.receipt_url && (
+                            <span className="flex items-center gap-1 text-success">
+                              <Image className="w-3 h-3" />
+                              Receipt
+                            </span>
+                          )}
+                          {link.note && (
+                            <span className="flex items-center gap-1 text-muted-foreground/80">
+                              <FileText className="w-3 h-3" />
+                              Note
                             </span>
                           )}
                         </div>
