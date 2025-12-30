@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Activity, UserPlus, UserMinus, ShieldOff, RefreshCw, Filter } from 'lucide-react';
+import { Activity, UserPlus, UserMinus, ShieldOff, RefreshCw, Filter, Search } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 
@@ -31,6 +32,7 @@ export default function ActivityLogs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'member_joined' | 'member_left' | 'auto_revoke_on_leave'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   async function fetchLogs() {
     setLoading(true);
@@ -107,9 +109,16 @@ export default function ActivityLogs() {
     }
   }
 
-  const joinedCount = logs.filter(l => l.action === 'member_joined').length;
-  const leftCount = logs.filter(l => l.action === 'member_left').length;
-  const revokedCount = logs.filter(l => l.action === 'auto_revoke_on_leave').length;
+  // Filter logs by search query
+  const filteredLogs = logs.filter(log => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return log.details?.access_code?.toLowerCase().includes(query);
+  });
+
+  const joinedCount = filteredLogs.filter(l => l.action === 'member_joined').length;
+  const leftCount = filteredLogs.filter(l => l.action === 'member_left').length;
+  const revokedCount = filteredLogs.filter(l => l.action === 'auto_revoke_on_leave').length;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -171,6 +180,15 @@ export default function ActivityLogs() {
               <CardTitle>Recent Activity</CardTitle>
             </div>
             <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search by code..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-40 pl-9 bg-input"
+                />
+              </div>
               <Filter className="w-4 h-4 text-muted-foreground" />
               <Select value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
                 <SelectTrigger className="w-40 bg-input">
@@ -192,13 +210,13 @@ export default function ActivityLogs() {
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="w-6 h-6 animate-spin text-primary" />
             </div>
-          ) : logs.length === 0 ? (
+          ) : filteredLogs.length === 0 ? (
             <p className="text-muted-foreground text-center py-12">
-              No activity recorded yet. Events will appear when members join or leave your Telegram groups.
+              {searchQuery ? `No logs found for "${searchQuery}"` : 'No activity recorded yet. Events will appear when members join or leave your Telegram groups.'}
             </p>
           ) : (
             <div className="space-y-3">
-              {logs.map((log) => (
+              {filteredLogs.map((log) => (
                 <div
                   key={log.id}
                   className="flex items-start gap-4 p-4 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 transition-colors"
