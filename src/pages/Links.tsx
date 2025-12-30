@@ -710,7 +710,7 @@ If you need support, access the dashboard and visit the Support section.`;
       case 'banned':
         return <Badge variant="outline" className="border-destructive text-destructive">Banned</Badge>;
       case 'closed_by_telegram':
-        return <Badge variant="outline" className="border-sky-500 text-sky-500">Closed by TG</Badge>;
+        return <Badge variant="outline" className="border-destructive text-destructive bg-destructive/10">Closed By Telegram</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
