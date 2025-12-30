@@ -102,10 +102,10 @@ Deno.serve(async (req) => {
             const revokeResult = await revokeResponse.json();
             console.log('Revoke result:', JSON.stringify(revokeResult));
 
-            // Update status in database
+            // Update status in database - use 'closed_by_telegram' so user can still access panel
             await supabase
               .from('invite_links')
-              .update({ status: 'revoked' })
+              .update({ status: 'closed_by_telegram' })
               .eq('id', linkRecord.id);
 
             // Log the activity
