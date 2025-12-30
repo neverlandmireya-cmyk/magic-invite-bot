@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { Link2, CheckCircle, Clock, XCircle, DollarSign, TrendingUp } from 'lucide-react';
@@ -21,11 +22,19 @@ interface RevenueEntry {
 }
 
 export default function Dashboard() {
-  const { codeUser } = useAuth();
+  const { codeUser, isAdmin, isReseller, loading: authLoading } = useAuth();
   const [stats, setStats] = useState<Stats>({ total: 0, active: 0, used: 0, expired: 0 });
   const [totalRevenue, setTotalRevenue] = useState<number>(0);
   const [recentRevenue, setRecentRevenue] = useState<RevenueEntry[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Redirect non-admins
+  if (!authLoading && !isAdmin) {
+    if (isReseller) {
+      return <Navigate to="/reseller" replace />;
+    }
+    return <Navigate to="/links" replace />;
+  }
 
   useEffect(() => {
     async function fetchStats() {

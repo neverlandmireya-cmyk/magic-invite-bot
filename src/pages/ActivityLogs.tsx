@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 import { Activity, UserPlus, UserMinus, ShieldOff, RefreshCw, Filter, Search } from 'lucide-react';
@@ -30,14 +31,18 @@ interface ActivityLog {
 }
 
 export default function ActivityLogs() {
-  const { codeUser, isAdmin, isReseller } = useAuth();
+  const { codeUser, isAdmin, isReseller, loading: authLoading } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'member_joined' | 'member_left' | 'auto_revoke_on_leave'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Check access
+  // Check access - redirect regular users
   const hasAccess = isAdmin || isReseller;
+  
+  if (!authLoading && !hasAccess) {
+    return <Navigate to="/links" replace />;
+  }
 
   async function fetchLogs() {
     if (!codeUser?.accessCode) {
@@ -128,10 +133,10 @@ export default function ActivityLogs() {
   const leftCount = filteredLogs.filter(l => l.action === 'member_left').length;
   const revokedCount = filteredLogs.filter(l => l.action === 'auto_revoke_on_leave').length;
 
-  if (!hasAccess) {
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Access denied.</p>
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
