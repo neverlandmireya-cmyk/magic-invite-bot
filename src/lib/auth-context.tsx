@@ -6,18 +6,26 @@ interface CodeUser {
   linkId?: string;
   adminId?: string;
   adminName?: string;
+  resellerId?: string;
+  resellerName?: string;
+  credits?: number;
+  groupId?: string;
+  groupName?: string;
   isAdmin: boolean;
+  isReseller: boolean;
 }
 
 interface AuthContextType {
   codeUser: CodeUser | null;
   loading: boolean;
   isAdmin: boolean;
+  isReseller: boolean;
   isAuthenticated: boolean;
   isBanned: boolean;
   signInWithCode: (code: string) => Promise<{ error: Error | null; isBanned?: boolean }>;
   signOut: () => Promise<void>;
   clearBannedState: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -98,6 +106,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   };
 
+  const refreshUser = async () => {
+    if (!codeUser?.accessCode) return;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-code', {
+        body: { code: codeUser.accessCode }
+      });
+
+      if (!error && data?.success) {
+        const newCodeUser: CodeUser = data.data;
+        localStorage.setItem(CODE_USER_KEY, JSON.stringify(newCodeUser));
+        setCodeUser(newCodeUser);
+      }
+    } catch {
+      // Ignore refresh errors
+    }
+  };
+
   const signInWithCode = async (code: string) => {
     try {
       // Validate code format client-side first
@@ -165,6 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isAdmin = codeUser?.isAdmin ?? false;
+  const isReseller = codeUser?.isReseller ?? false;
   const isAuthenticated = !!codeUser;
 
   return (
@@ -172,11 +199,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       codeUser,
       loading, 
       isAdmin,
+      isReseller,
       isAuthenticated,
       isBanned,
       signInWithCode,
       signOut,
-      clearBannedState
+      clearBannedState,
+      refreshUser
     }}>
       {children}
     </AuthContext.Provider>

@@ -23,6 +23,7 @@ export type Database = {
           entity_type: string
           id: string
           performed_by: string
+          reseller_code: string | null
         }
         Insert: {
           action: string
@@ -32,6 +33,7 @@ export type Database = {
           entity_type: string
           id?: string
           performed_by: string
+          reseller_code?: string | null
         }
         Update: {
           action?: string
@@ -41,6 +43,7 @@ export type Database = {
           entity_type?: string
           id?: string
           performed_by?: string
+          reseller_code?: string | null
         }
         Relationships: []
       }
@@ -85,6 +88,7 @@ export type Database = {
           invite_link: string
           note: string | null
           receipt_url: string | null
+          reseller_code: string | null
           status: string | null
           used_at: string | null
         }
@@ -101,6 +105,7 @@ export type Database = {
           invite_link: string
           note?: string | null
           receipt_url?: string | null
+          reseller_code?: string | null
           status?: string | null
           used_at?: string | null
         }
@@ -117,8 +122,45 @@ export type Database = {
           invite_link?: string
           note?: string | null
           receipt_url?: string | null
+          reseller_code?: string | null
           status?: string | null
           used_at?: string | null
+        }
+        Relationships: []
+      }
+      resellers: {
+        Row: {
+          code: string
+          created_at: string
+          credits: number
+          group_id: string
+          group_name: string | null
+          id: string
+          is_active: boolean
+          last_used_at: string | null
+          name: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          credits?: number
+          group_id: string
+          group_name?: string | null
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          name: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          credits?: number
+          group_id?: string
+          group_name?: string | null
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          name?: string
         }
         Relationships: []
       }
@@ -223,6 +265,7 @@ export type Database = {
           id: string
           message: string
           priority: string | null
+          reseller_code: string | null
           status: string
           subject: string
           updated_at: string
@@ -233,6 +276,7 @@ export type Database = {
           id?: string
           message: string
           priority?: string | null
+          reseller_code?: string | null
           status?: string
           subject: string
           updated_at?: string
@@ -243,6 +287,7 @@ export type Database = {
           id?: string
           message?: string
           priority?: string | null
+          reseller_code?: string | null
           status?: string
           subject?: string
           updated_at?: string
