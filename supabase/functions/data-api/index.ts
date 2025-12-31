@@ -854,15 +854,23 @@ Deno.serve(async (req) => {
                 .eq('code', accessCode)
                 .single();
 
-              const resellerName = resellerInfo?.name || accessCode;
+              const resellerName = resellerInfo?.name || 'Unknown';
               const subject = (ticketData.subject as string) || 'No subject';
-              const priority = ((ticketData.priority as string) || 'medium').toUpperCase();
+              const ticketMessage = (ticketData.message as string) || '';
+              const priority = ((ticketData.priority as string) || 'normal').toUpperCase();
+
+              // Truncate message if too long
+              const truncatedMessage = ticketMessage.length > 300 
+                ? ticketMessage.substring(0, 300) + '...' 
+                : ticketMessage;
 
               const message = `🎫 <b>New Reseller Ticket</b>\n\n` +
-                `<b>From:</b> ${resellerName}\n` +
-                `<b>Subject:</b> ${subject}\n` +
+                `<b>Reseller:</b> ${resellerName}\n` +
+                `<b>Code:</b> <code>${accessCode}</code>\n` +
                 `<b>Priority:</b> ${priority}\n\n` +
-                `Check the admin panel to respond.`;
+                `<b>Subject:</b> ${subject}\n\n` +
+                `<b>Message:</b>\n${truncatedMessage}\n\n` +
+                `📋 Check the admin panel to respond.`;
 
               await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
                 method: 'POST',
