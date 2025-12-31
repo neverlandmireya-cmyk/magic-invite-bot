@@ -731,6 +731,40 @@ Deno.serve(async (req) => {
           );
         }
 
+        // Send Discord notification for reseller creation
+        const resellerCreatedWebhook = Deno.env.get('DISCORD_WEBHOOK_RESELLER_CREATED');
+        if (resellerCreatedWebhook) {
+          try {
+            const resellerName = (resellerData.name as string) || 'Unknown';
+            const resellerCodeValue = (resellerData.code as string) || 'N/A';
+            const credits = (resellerData.credits as number) || 0;
+            const groupName = (resellerData.group_name as string) || 'N/A';
+
+            await fetch(resellerCreatedWebhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                embeds: [{
+                  title: '✨ New Reseller Created',
+                  description: `A new reseller has been added to the system.`,
+                  color: 0x00FF00, // Green
+                  fields: [
+                    { name: 'Name', value: resellerName, inline: true },
+                    { name: 'Code', value: resellerCodeValue, inline: true },
+                    { name: 'Credits', value: credits.toString(), inline: true },
+                    { name: 'Group', value: groupName, inline: false },
+                  ],
+                  timestamp: new Date().toISOString(),
+                  footer: { text: 'Reseller Created' },
+                }],
+              }),
+            });
+            console.log('Discord notification sent for reseller creation');
+          } catch (discordError) {
+            console.error('Failed to send Discord notification:', discordError);
+          }
+        }
+
         return new Response(
           JSON.stringify({ success: true }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
