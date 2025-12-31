@@ -5,6 +5,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Discord webhook logging helper
+async function sendDiscordLog(type: string, title: string, description: string, fields?: Array<{name: string, value: string, inline?: boolean}>, color?: number) {
+  const webhookUrl = Deno.env.get("DISCORD_WEBHOOK_LOGS");
+  if (!webhookUrl) {
+    console.log("Discord webhook not configured");
+    return;
+  }
+
+  const colors: Record<string, number> = {
+    join: 0x00FF00,     // Green
+    leave: 0xFF6B6B,    // Soft red
+    revoke: 0xFF0000,   // Red
+    activity: 0x5865F2, // Discord blue
+  };
+
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [{
+          title,
+          description,
+          color: color || colors[type] || 0x5865F2,
+          fields: fields || [],
+          timestamp: new Date().toISOString(),
+          footer: { text: `TELEGRAM ${type.toUpperCase()}` }
+        }]
+      })
+    });
+    console.log(`Discord ${type} log sent`);
+  } catch (error) {
+    console.error("Failed to send Discord log:", error);
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -123,6 +159,15 @@ Deno.serve(async (req) => {
               performed_by: 'telegram-webhook',
             });
 
+            // Send Discord log for auto-revoke
+            await sendDiscordLog('revoke', '⚠️ Auto-Revoked: User Left Group', 
+              `Link **${linkRecord.access_code}** was automatically revoked`, [
+              { name: 'Username', value: user?.username ? `@${user.username}` : 'N/A', inline: true },
+              { name: 'User ID', value: String(user?.id || 'Unknown'), inline: true },
+              { name: 'Group', value: chatMember.chat?.title || chatId || 'Unknown', inline: true },
+              { name: 'Telegram Revoked', value: revokeResult.ok ? '✅ Yes' : '❌ Failed', inline: true },
+            ]);
+
             console.log(`Link ${linkRecord.access_code} revoked automatically`);
           }
         } else {
@@ -166,6 +211,14 @@ Deno.serve(async (req) => {
             },
             performed_by: 'telegram-webhook',
           });
+
+          // Send Discord log for member join
+          await sendDiscordLog('join', '✅ Member Joined', 
+            `User joined via link **${joinedLink.access_code}**`, [
+            { name: 'Username', value: user?.username ? `@${user.username}` : 'N/A', inline: true },
+            { name: 'Name', value: user?.first_name || 'Unknown', inline: true },
+            { name: 'Group', value: chatMember.chat?.title || chatId || 'Unknown', inline: true },
+          ]);
 
           console.log('Link marked as used and join logged');
         }
