@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       },
     });
 
-    const { action, adminCode, botToken, groupIds } = await req.json();
+    const { action, adminCode, botToken, groupIds, notificationGroupId } = await req.json();
 
     // Validate admin code for all actions
     if (!adminCode || typeof adminCode !== 'string' || adminCode.length < 6) {
@@ -107,6 +107,13 @@ Deno.serve(async (req) => {
         await supabase
           .from('settings')
           .upsert({ key: 'group_ids', value: groupIds }, { onConflict: 'key' });
+      }
+
+      // Save notification group ID
+      if (notificationGroupId !== undefined) {
+        await supabase
+          .from('settings')
+          .upsert({ key: 'notification_group_id', value: notificationGroupId }, { onConflict: 'key' });
       }
 
       console.log('Settings saved successfully by admin:', adminData.id);
