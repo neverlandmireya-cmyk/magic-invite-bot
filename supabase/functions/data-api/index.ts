@@ -5,6 +5,43 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Discord webhook logging helper
+async function sendDiscordLog(type: string, title: string, description: string, fields?: Array<{name: string, value: string, inline?: boolean}>, color?: number) {
+  const webhookUrl = Deno.env.get("DISCORD_WEBHOOK_LOGS");
+  if (!webhookUrl) {
+    console.log("Discord webhook not configured");
+    return;
+  }
+
+  const colors: Record<string, number> = {
+    ban: 0xFF0000,      // Red
+    ticket: 0x5865F2,   // Discord blue
+    reseller: 0xFFD700, // Gold
+    activity: 0x00FF00, // Green
+    warning: 0xFFA500,  // Orange
+  };
+
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [{
+          title,
+          description,
+          color: color || colors[type] || 0x5865F2,
+          fields: fields || [],
+          timestamp: new Date().toISOString(),
+          footer: { text: `${type.toUpperCase()} LOG` }
+        }]
+      })
+    });
+    console.log(`Discord ${type} log sent`);
+  } catch (error) {
+    console.error("Failed to send Discord log:", error);
+  }
+}
+
 interface RequestBody {
   code: string;
   action: string;
@@ -266,6 +303,13 @@ Deno.serve(async (req) => {
 
         const { id, updates } = data as { id: string; updates: Record<string, unknown> };
 
+        // Get link info before update for logging
+        const { data: linkBefore } = await supabase
+          .from('invite_links')
+          .select('access_code, status, group_name, client_email')
+          .eq('id', id)
+          .single();
+
         const { error } = await supabase
           .from('invite_links')
           .update(updates)
@@ -276,6 +320,16 @@ Deno.serve(async (req) => {
             JSON.stringify({ error: error.message }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
+        }
+
+        // Log ban actions to Discord
+        if (updates.status === 'banned' && linkBefore) {
+          await sendDiscordLog('ban', '🚫 User Banned', `Access code **${linkBefore.access_code}** has been banned`, [
+            { name: 'Group', value: linkBefore.group_name || 'Unknown', inline: true },
+            { name: 'Previous Status', value: linkBefore.status || 'Unknown', inline: true },
+            { name: 'Banned By', value: accessCode, inline: true },
+            { name: 'Email', value: linkBefore.client_email || 'Not provided', inline: false },
+          ]);
         }
 
         return new Response(
