@@ -133,7 +133,17 @@ export default function AdminCodes() {
     setCreating(false);
   };
 
+  const isCurrentAdmin = (admin: AdminCode) => {
+    return admin.code === codeUser?.accessCode;
+  };
+
   const toggleActive = async (admin: AdminCode) => {
+    // Prevent deactivating own code
+    if (isCurrentAdmin(admin) && admin.is_active) {
+      toast.error("You cannot deactivate your own admin code");
+      return;
+    }
+
     try {
       const { error } = await supabase.functions.invoke('data-api', {
         body: { 
@@ -155,6 +165,12 @@ export default function AdminCodes() {
   const deleteAdmin = async (admin: AdminCode) => {
     if (admins.length <= 1) {
       toast.error('Cannot delete the last admin');
+      return;
+    }
+
+    // Prevent deleting own code
+    if (isCurrentAdmin(admin)) {
+      toast.error("You cannot delete your own admin code");
       return;
     }
 
@@ -289,6 +305,9 @@ export default function AdminCodes() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-foreground">{admin.name}</span>
+                      {isCurrentAdmin(admin) && (
+                        <Badge className="bg-primary/20 text-primary border-primary/30">You</Badge>
+                      )}
                       {admin.is_active ? (
                         <Badge variant="outline" className="border-success text-success">Active</Badge>
                       ) : (
@@ -330,7 +349,9 @@ export default function AdminCodes() {
                     variant="ghost"
                     size="icon"
                     onClick={() => toggleActive(admin)}
-                    title={admin.is_active ? 'Deactivate' : 'Activate'}
+                    title={isCurrentAdmin(admin) && admin.is_active ? "Can't deactivate your own code" : (admin.is_active ? 'Deactivate' : 'Activate')}
+                    disabled={isCurrentAdmin(admin) && admin.is_active}
+                    className={isCurrentAdmin(admin) && admin.is_active ? 'opacity-50 cursor-not-allowed' : ''}
                   >
                     <Badge 
                       variant="outline" 
@@ -343,8 +364,9 @@ export default function AdminCodes() {
                     variant="ghost"
                     size="icon"
                     onClick={() => deleteAdmin(admin)}
-                    className="text-muted-foreground hover:text-destructive"
-                    title="Delete admin"
+                    className={`text-muted-foreground hover:text-destructive ${isCurrentAdmin(admin) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title={isCurrentAdmin(admin) ? "Can't delete your own code" : "Delete admin"}
+                    disabled={isCurrentAdmin(admin)}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
