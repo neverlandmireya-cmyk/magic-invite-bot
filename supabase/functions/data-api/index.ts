@@ -1037,6 +1037,51 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Send Discord notification for reseller tickets
+        if (isReseller) {
+          const resellerTicketWebhook = Deno.env.get('DISCORD_WEBHOOK_RESELLER_TICKETS');
+          if (resellerTicketWebhook) {
+            try {
+              const { data: resellerInfo } = await supabase
+                .from('resellers')
+                .select('name')
+                .eq('code', accessCode)
+                .single();
+
+              const resellerName = resellerInfo?.name || 'Unknown';
+              const subject = (ticketData.subject as string) || 'No subject';
+              const priority = ((ticketData.priority as string) || 'normal').toUpperCase();
+              const ticketMessage = (ticketData.message as string) || '';
+              const truncatedMessage = ticketMessage.length > 500 
+                ? ticketMessage.substring(0, 500) + '...' 
+                : ticketMessage;
+
+              await fetch(resellerTicketWebhook, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  embeds: [{
+                    title: '🎫 New Reseller Ticket',
+                    description: truncatedMessage,
+                    color: 0xFFD700, // Gold
+                    fields: [
+                      { name: 'Reseller', value: resellerName, inline: true },
+                      { name: 'Code', value: accessCode, inline: true },
+                      { name: 'Priority', value: priority, inline: true },
+                      { name: 'Subject', value: subject, inline: false },
+                    ],
+                    timestamp: new Date().toISOString(),
+                    footer: { text: 'Reseller Ticket' },
+                  }],
+                }),
+              });
+              console.log('Discord notification sent for reseller ticket');
+            } catch (discordError) {
+              console.error('Failed to send Discord notification:', discordError);
+            }
+          }
+        }
+
         return new Response(
           JSON.stringify({ success: true }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
