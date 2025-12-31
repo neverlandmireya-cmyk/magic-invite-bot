@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
-import { Users, Plus, RefreshCw, ToggleLeft, ToggleRight, Trash2, Coins, Copy, Check, ArrowLeft, MessageSquare, Activity, Link as LinkIcon } from 'lucide-react';
+import { Users, Plus, RefreshCw, ToggleLeft, ToggleRight, Trash2, Coins, Copy, Check, ArrowLeft, MessageSquare, Activity, Link as LinkIcon, Ban, ShieldCheck } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -56,6 +57,8 @@ interface InviteLink {
   status: string;
   client_email: string | null;
   created_at: string;
+  invite_link: string;
+  group_name: string | null;
 }
 
 interface ResellerDetails {
@@ -80,6 +83,10 @@ export default function Resellers() {
   // Detail view state
   const [viewingReseller, setViewingReseller] = useState<ResellerDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  
+  // Ban functionality
+  const [banTarget, setBanTarget] = useState<InviteLink | null>(null);
+  const [unbanTarget, setUnbanTarget] = useState<InviteLink | null>(null);
 
   useEffect(() => {
     fetchResellers();
@@ -334,6 +341,114 @@ export default function Resellers() {
     }
   };
 
+  const getLinkStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <Badge variant="outline" className="border-success text-success">Active</Badge>;
+      case 'used':
+        return <Badge variant="outline" className="border-primary text-primary">Used</Badge>;
+      case 'banned':
+        return <Badge variant="outline" className="border-destructive text-destructive">Banned</Badge>;
+      case 'revoked':
+        return <Badge variant="outline" className="border-warning text-warning">Revoked</Badge>;
+      case 'closed_by_telegram':
+        return <Badge variant="outline" className="border-muted-foreground text-muted-foreground">Closed</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  // Ban user - revoke Telegram link and mark as banned
+  const handleBanUser = async (link: InviteLink) => {
+    if (!codeUser?.accessCode) return;
+
+    try {
+      // Revoke on Telegram
+      if (link.invite_link) {
+        const { data: revokeData } = await supabase.functions.invoke('telegram-revoke', {
+          body: {
+            adminCode: codeUser.accessCode,
+            inviteLink: link.invite_link
+          }
+        });
+        
+        if (revokeData?.success) {
+          console.log('Link revoked on Telegram');
+        }
+      }
+
+      // Update status to banned
+      const { data: updateResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: { id: link.id, updates: { status: 'banned' } }
+        }
+      });
+
+      if (error || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to ban user');
+      }
+
+      // Log activity
+      await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'insert-activity-log',
+          data: {
+            action: 'admin_ban_reseller_user',
+            entity_type: 'invite_link',
+            entity_id: link.id,
+            details: {
+              access_code: link.access_code,
+              reseller_code: viewingReseller?.reseller.code,
+              group_name: link.group_name,
+            }
+          }
+        }
+      });
+
+      toast.success('User banned successfully');
+      setBanTarget(null);
+      
+      // Refresh the reseller details
+      if (viewingReseller) {
+        fetchResellerDetails(viewingReseller.reseller);
+      }
+    } catch (error) {
+      toast.error('Failed to ban user');
+    }
+  };
+
+  // Unban user - restore status to revoked
+  const handleUnbanUser = async (link: InviteLink) => {
+    if (!codeUser?.accessCode) return;
+
+    try {
+      const { data: updateResponse, error } = await supabase.functions.invoke('data-api', {
+        body: {
+          code: codeUser.accessCode,
+          action: 'update-link',
+          data: { id: link.id, updates: { status: 'revoked' } }
+        }
+      });
+
+      if (error || !updateResponse?.success) {
+        throw new Error(updateResponse?.error || 'Failed to unban user');
+      }
+
+      toast.success('User unbanned - can now regenerate link');
+      setUnbanTarget(null);
+      
+      // Refresh the reseller details
+      if (viewingReseller) {
+        fetchResellerDetails(viewingReseller.reseller);
+      }
+    } catch (error) {
+      toast.error('Failed to unban user');
+    }
+  };
+
   // Detail view
   if (viewingReseller) {
     return (
@@ -498,7 +613,7 @@ export default function Resellers() {
             <Card className="glass">
               <CardHeader>
                 <CardTitle className="text-lg">Generated Links</CardTitle>
-                <CardDescription>Links created by this reseller</CardDescription>
+                <CardDescription>Links created by this reseller - Ban or unban users here</CardDescription>
               </CardHeader>
               <CardContent>
                 {viewingReseller.links.length === 0 ? (
@@ -510,18 +625,42 @@ export default function Resellers() {
                         key={link.id}
                         className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
                           <span className="font-mono text-sm bg-primary/10 text-primary px-2 py-0.5 rounded">
                             {link.access_code}
                           </span>
-                          <Badge variant="outline">{link.status}</Badge>
+                          {getLinkStatusBadge(link.status)}
                           {link.client_email && (
-                            <span className="text-sm text-muted-foreground">{link.client_email}</span>
+                            <span className="text-sm text-muted-foreground truncate">{link.client_email}</span>
                           )}
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {format(new Date(link.created_at), 'MMM d, yyyy')}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(link.created_at), 'MMM d, yyyy')}
+                          </span>
+                          {/* Ban/Unban buttons */}
+                          {link.status === 'banned' ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-success hover:text-success hover:bg-success/10"
+                              onClick={() => setUnbanTarget(link)}
+                              title="Unban User"
+                            >
+                              <ShieldCheck className="w-4 h-4" />
+                            </Button>
+                          ) : link.status !== 'revoked' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => setBanTarget(link)}
+                              title="Ban User"
+                            >
+                              <Ban className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -530,6 +669,66 @@ export default function Resellers() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Ban Confirmation Dialog */}
+        <AlertDialog open={!!banTarget} onOpenChange={() => setBanTarget(null)}>
+          <AlertDialogContent className="glass border-destructive/30">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                <Ban className="w-5 h-5" />
+                Ban User
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This will revoke the Telegram invite link and block the user from accessing the group.
+                {banTarget?.access_code && (
+                  <span className="block mt-2 font-mono text-foreground bg-destructive/10 px-2 py-1 rounded">
+                    {banTarget.access_code}
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => banTarget && handleBanUser(banTarget)}
+              >
+                <Ban className="w-4 h-4 mr-2" />
+                Ban User
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Unban Confirmation Dialog */}
+        <AlertDialog open={!!unbanTarget} onOpenChange={() => setUnbanTarget(null)}>
+          <AlertDialogContent className="glass">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-success">
+                <ShieldCheck className="w-5 h-5" />
+                Unban User
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This will unban the user and allow regeneration of their link. They will be moved to "Revoked" status.
+                {unbanTarget?.access_code && (
+                  <span className="block mt-2 font-mono text-foreground bg-success/10 px-2 py-1 rounded">
+                    {unbanTarget.access_code}
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-success text-success-foreground hover:bg-success/90"
+                onClick={() => unbanTarget && handleUnbanUser(unbanTarget)}
+              >
+                <ShieldCheck className="w-4 h-4 mr-2" />
+                Unban User
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
