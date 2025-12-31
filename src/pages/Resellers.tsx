@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
-import { Users, Plus, RefreshCw, ToggleLeft, ToggleRight, Trash2, Coins, Copy, Check, ArrowLeft, MessageSquare, Activity, Link as LinkIcon, Ban, ShieldCheck } from 'lucide-react';
+import { Users, Plus, RefreshCw, ToggleLeft, ToggleRight, Trash2, Coins, Copy, Check, ArrowLeft, MessageSquare, Activity, Link as LinkIcon, Ban, ShieldCheck, Send, Loader2, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -38,6 +39,15 @@ interface Ticket {
   message: string;
   status: string;
   priority: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+interface TicketReply {
+  id: string;
+  ticket_id: string;
+  message: string;
+  is_admin: boolean;
   created_at: string;
 }
 
@@ -87,6 +97,13 @@ export default function Resellers() {
   // Ban functionality
   const [banTarget, setBanTarget] = useState<InviteLink | null>(null);
   const [unbanTarget, setUnbanTarget] = useState<InviteLink | null>(null);
+  
+  // Ticket detail view
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [ticketReplies, setTicketReplies] = useState<TicketReply[]>([]);
+  const [loadingReplies, setLoadingReplies] = useState(false);
+  const [replyMessage, setReplyMessage] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
 
   useEffect(() => {
     fetchResellers();
@@ -171,6 +188,100 @@ export default function Resellers() {
       toast.error('Failed to load reseller details');
     }
     setLoadingDetails(false);
+  };
+
+  // Load ticket replies
+  const loadTicketReplies = async (ticketId: string) => {
+    if (!codeUser?.accessCode) return;
+
+    setLoadingReplies(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'get-ticket-replies',
+          data: { ticketId }
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setTicketReplies(data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load replies:', error);
+    }
+    setLoadingReplies(false);
+  };
+
+  // Send reply to ticket
+  const sendTicketReply = async () => {
+    if (!selectedTicket || !codeUser?.accessCode || !replyMessage.trim()) return;
+
+    setSendingReply(true);
+    try {
+      const { error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'insert-ticket-reply',
+          data: {
+            ticketId: selectedTicket.id,
+            message: replyMessage.trim(),
+          }
+        }
+      });
+
+      if (error) throw error;
+
+      setReplyMessage('');
+      loadTicketReplies(selectedTicket.id);
+    } catch (error) {
+      console.error('Failed to send reply:', error);
+      toast.error('Failed to send reply');
+    }
+    setSendingReply(false);
+  };
+
+  // Update ticket status
+  const updateTicketStatus = async (ticketId: string, status: string) => {
+    if (!codeUser?.accessCode) return;
+
+    try {
+      const { error } = await supabase.functions.invoke('data-api', {
+        body: { 
+          code: codeUser.accessCode, 
+          action: 'update-ticket',
+          data: { id: ticketId, updates: { status } }
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success('Status updated');
+      if (selectedTicket?.id === ticketId) {
+        setSelectedTicket({ ...selectedTicket, status });
+      }
+      // Refresh reseller details to update ticket list
+      if (viewingReseller) {
+        fetchResellerDetails(viewingReseller.reseller);
+      }
+    } catch (error) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  // Open ticket detail view
+  const openTicketDetail = (ticket: Ticket) => {
+    setSelectedTicket(ticket);
+    loadTicketReplies(ticket.id);
+  };
+
+  // Close ticket detail view
+  const closeTicketDetail = () => {
+    setSelectedTicket(null);
+    setTicketReplies([]);
+    setReplyMessage('');
   };
 
   const generateCode = () => {
@@ -542,7 +653,7 @@ export default function Resellers() {
             <Card className="glass">
               <CardHeader>
                 <CardTitle className="text-lg">Customer Tickets</CardTitle>
-                <CardDescription>Tickets from customers whose links were created by this reseller</CardDescription>
+                <CardDescription>Click a ticket to view details and respond</CardDescription>
               </CardHeader>
               <CardContent>
                 {viewingReseller.tickets.length === 0 ? (
@@ -552,7 +663,8 @@ export default function Resellers() {
                     {viewingReseller.tickets.map((ticket) => (
                       <div
                         key={ticket.id}
-                        className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border"
+                        className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+                        onClick={() => openTicketDetail(ticket)}
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3 mb-1">
@@ -566,6 +678,9 @@ export default function Resellers() {
                             <span>{format(new Date(ticket.created_at), 'MMM d, yyyy HH:mm')}</span>
                           </div>
                         </div>
+                        <Button variant="ghost" size="icon" className="shrink-0">
+                          <Eye className="w-4 h-4" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -729,6 +844,105 @@ export default function Resellers() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Ticket Detail Dialog */}
+        <Dialog open={!!selectedTicket} onOpenChange={(open) => !open && closeTicketDetail()}>
+          <DialogContent className="glass max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-3">
+                <MessageSquare className="w-5 h-5" />
+                {selectedTicket?.subject}
+              </DialogTitle>
+              <div className="flex items-center gap-3 pt-2">
+                {selectedTicket && getStatusBadge(selectedTicket.status)}
+                <span className="font-mono text-sm bg-primary/10 text-primary px-2 py-0.5 rounded">
+                  {selectedTicket?.access_code}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {selectedTicket && format(new Date(selectedTicket.created_at), 'MMM d, yyyy HH:mm')}
+                </span>
+              </div>
+            </DialogHeader>
+            
+            <div className="flex-1 overflow-y-auto space-y-4 py-4">
+              {/* Original message */}
+              <Card className="bg-muted/30 border-border">
+                <CardContent className="pt-4">
+                  <p className="text-foreground whitespace-pre-wrap">{selectedTicket?.message}</p>
+                </CardContent>
+              </Card>
+
+              {/* Replies */}
+              {loadingReplies ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                ticketReplies.map((reply) => (
+                  <div
+                    key={reply.id}
+                    className={`p-4 rounded-lg ${
+                      reply.is_admin 
+                        ? 'bg-primary/10 border border-primary/20 ml-8' 
+                        : 'bg-muted/30 border border-border mr-8'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {reply.is_admin ? 'Admin' : 'Customer'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(reply.created_at), 'MMM d, HH:mm')}
+                      </span>
+                    </div>
+                    <p className="text-foreground whitespace-pre-wrap">{reply.message}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Status controls and reply form */}
+            <div className="border-t border-border pt-4 space-y-4">
+              {/* Status selector */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">Status:</span>
+                <Select 
+                  value={selectedTicket?.status || 'open'} 
+                  onValueChange={(v) => selectedTicket && updateTicketStatus(selectedTicket.id, v)}
+                >
+                  <SelectTrigger className="w-32 bg-input">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Reply form */}
+              {selectedTicket?.status !== 'closed' && (
+                <div className="flex gap-3">
+                  <Textarea
+                    placeholder="Type your reply..."
+                    value={replyMessage}
+                    onChange={(e) => setReplyMessage(e.target.value)}
+                    className="bg-input min-h-[80px] flex-1"
+                    maxLength={5000}
+                  />
+                  <Button 
+                    onClick={sendTicketReply} 
+                    disabled={sendingReply || !replyMessage.trim()}
+                    className="glow-sm"
+                  >
+                    {sendingReply ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
