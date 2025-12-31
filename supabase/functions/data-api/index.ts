@@ -834,19 +834,30 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Send Telegram notification for reseller tickets
-        if (isReseller) {
-          try {
-            // Get bot token and notification group ID
-            const { data: settings } = await supabase
-              .from('settings')
-              .select('key, value')
-              .in('key', ['bot_token', 'notification_group_id']);
+        // Send Telegram notification for all tickets
+        try {
+          // Get bot token and notification group ID
+          const { data: settings } = await supabase
+            .from('settings')
+            .select('key, value')
+            .in('key', ['bot_token', 'notification_group_id']);
 
-            const botToken = settings?.find((s: { key: string; value: string }) => s.key === 'bot_token')?.value;
-            const notificationGroupId = settings?.find((s: { key: string; value: string }) => s.key === 'notification_group_id')?.value;
+          const botToken = settings?.find((s: { key: string; value: string }) => s.key === 'bot_token')?.value;
+          const notificationGroupId = settings?.find((s: { key: string; value: string }) => s.key === 'notification_group_id')?.value;
 
-            if (botToken && notificationGroupId) {
+          if (botToken && notificationGroupId) {
+            const subject = (ticketData.subject as string) || 'No subject';
+            const ticketMessage = (ticketData.message as string) || '';
+            const priority = ((ticketData.priority as string) || 'normal').toUpperCase();
+
+            // Truncate message if too long
+            const truncatedMessage = ticketMessage.length > 300 
+              ? ticketMessage.substring(0, 300) + '...' 
+              : ticketMessage;
+
+            let message: string;
+
+            if (isReseller) {
               // Get reseller name
               const { data: resellerInfo } = await supabase
                 .from('resellers')
@@ -855,39 +866,39 @@ Deno.serve(async (req) => {
                 .single();
 
               const resellerName = resellerInfo?.name || 'Unknown';
-              const subject = (ticketData.subject as string) || 'No subject';
-              const ticketMessage = (ticketData.message as string) || '';
-              const priority = ((ticketData.priority as string) || 'normal').toUpperCase();
 
-              // Truncate message if too long
-              const truncatedMessage = ticketMessage.length > 300 
-                ? ticketMessage.substring(0, 300) + '...' 
-                : ticketMessage;
-
-              const message = `🎫 <b>New Reseller Ticket</b>\n\n` +
+              message = `🎫 <b>New Reseller Ticket</b>\n\n` +
                 `<b>Reseller:</b> ${resellerName}\n` +
                 `<b>Code:</b> <code>${accessCode}</code>\n` +
                 `<b>Priority:</b> ${priority}\n\n` +
                 `<b>Subject:</b> ${subject}\n\n` +
                 `<b>Message:</b>\n${truncatedMessage}\n\n` +
                 `📋 Check the admin panel to respond.`;
-
-              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: notificationGroupId,
-                  text: message,
-                  parse_mode: 'HTML',
-                }),
-              });
-
-              console.log('Telegram notification sent for reseller ticket');
+            } else {
+              // Regular user ticket - no emojis
+              message = `<b>New Support Ticket</b>\n\n` +
+                `<b>User Code:</b> <code>${accessCode}</code>\n` +
+                `<b>Priority:</b> ${priority}\n\n` +
+                `<b>Subject:</b> ${subject}\n\n` +
+                `<b>Message:</b>\n${truncatedMessage}\n\n` +
+                `Check the admin panel to respond.`;
             }
-          } catch (notifError) {
-            console.error('Failed to send Telegram notification:', notifError);
-            // Don't fail the ticket creation if notification fails
+
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: notificationGroupId,
+                text: message,
+                parse_mode: 'HTML',
+              }),
+            });
+
+            console.log(`Telegram notification sent for ${isReseller ? 'reseller' : 'user'} ticket`);
           }
+        } catch (notifError) {
+          console.error('Failed to send Telegram notification:', notifError);
+          // Don't fail the ticket creation if notification fails
         }
 
         return new Response(
