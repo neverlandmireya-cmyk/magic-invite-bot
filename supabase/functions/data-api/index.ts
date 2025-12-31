@@ -818,18 +818,68 @@ Deno.serve(async (req) => {
           ticketData.reseller_code = accessCode;
         }
 
-        const { error } = await supabase
+        const { data: insertedTicket, error } = await supabase
           .from('tickets')
           .insert({
             ...ticketData,
             access_code: accessCode,
-          });
+          })
+          .select()
+          .single();
 
         if (error) {
           return new Response(
             JSON.stringify({ error: error.message }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
+        }
+
+        // Send Telegram notification for reseller tickets
+        if (isReseller) {
+          try {
+            // Get bot token and notification group ID
+            const { data: settings } = await supabase
+              .from('settings')
+              .select('key, value')
+              .in('key', ['bot_token', 'notification_group_id']);
+
+            const botToken = settings?.find((s: { key: string; value: string }) => s.key === 'bot_token')?.value;
+            const notificationGroupId = settings?.find((s: { key: string; value: string }) => s.key === 'notification_group_id')?.value;
+
+            if (botToken && notificationGroupId) {
+              // Get reseller name
+              const { data: resellerInfo } = await supabase
+                .from('resellers')
+                .select('name')
+                .eq('code', accessCode)
+                .single();
+
+              const resellerName = resellerInfo?.name || accessCode;
+              const subject = (ticketData.subject as string) || 'No subject';
+              const priority = ((ticketData.priority as string) || 'medium').toUpperCase();
+
+              const message = `🎫 <b>New Reseller Ticket</b>\n\n` +
+                `<b>From:</b> ${resellerName}\n` +
+                `<b>Subject:</b> ${subject}\n` +
+                `<b>Priority:</b> ${priority}\n\n` +
+                `Check the admin panel to respond.`;
+
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: notificationGroupId,
+                  text: message,
+                  parse_mode: 'HTML',
+                }),
+              });
+
+              console.log('Telegram notification sent for reseller ticket');
+            }
+          } catch (notifError) {
+            console.error('Failed to send Telegram notification:', notifError);
+            // Don't fail the ticket creation if notification fails
+          }
         }
 
         return new Response(

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Save, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Save, Eye, EyeOff, AlertCircle, CheckCircle2, Bell } from 'lucide-react';
 
 export default function Settings() {
   const { codeUser } = useAuth();
@@ -15,6 +15,7 @@ export default function Settings() {
   const [botTokenMasked, setBotTokenMasked] = useState('');
   const [botTokenSet, setBotTokenSet] = useState(false);
   const [groupIds, setGroupIds] = useState('');
+  const [notificationGroupId, setNotificationGroupId] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -43,6 +44,7 @@ export default function Settings() {
         setBotTokenSet(data.settings.bot_token_set === 'true');
         setBotTokenMasked(data.settings.bot_token_masked || '');
         setGroupIds(data.settings.group_ids || '');
+        setNotificationGroupId(data.settings.notification_group_id || '');
       }
     } catch (error) {
       console.error('Failed to load settings');
@@ -72,7 +74,8 @@ export default function Settings() {
           action: 'save',
           adminCode: codeUser.accessCode,
           botToken: botToken.trim() || undefined, // Only send if user entered new token
-          groupIds: groupIds
+          groupIds: groupIds,
+          notificationGroupId: notificationGroupId.trim()
         }
       });
 
@@ -167,6 +170,39 @@ export default function Settings() {
                 <li>For channels, enable "Sign Messages" if needed</li>
               </ol>
             </div>
+          </div>
+
+          <Button onClick={handleSave} disabled={saving} className="glow-sm">
+            <Save className="w-4 h-4 mr-2" />
+            {saving ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="glass">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="w-5 h-5" />
+            Notifications
+          </CardTitle>
+          <CardDescription>
+            Get notified when resellers open new support tickets
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="notificationGroup">Notification Group ID</Label>
+            <Input
+              id="notificationGroup"
+              placeholder="-1001234567890"
+              value={notificationGroupId}
+              onChange={(e) => setNotificationGroupId(e.target.value)}
+              className="bg-input font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              The bot will send a message to this group when a reseller opens a new ticket.
+              Add the bot to the group first, then use @userinfobot to get the Chat ID.
+            </p>
           </div>
 
           <Button onClick={handleSave} disabled={saving} className="glow-sm">
