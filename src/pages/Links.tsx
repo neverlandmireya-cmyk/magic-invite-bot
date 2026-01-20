@@ -961,14 +961,16 @@ export default function Links() {
       ? revokedLinks 
       : bannedLinks;
 
-  // Filter links based on search
+  // Filter links based on search (includes access_code, group_name, invite_link, client_email, note)
   const filteredActiveLinks = activeLinks.filter(link => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
       link.access_code?.toLowerCase().includes(query) ||
       link.group_name?.toLowerCase().includes(query) ||
-      link.invite_link.toLowerCase().includes(query)
+      link.invite_link.toLowerCase().includes(query) ||
+      link.client_email?.toLowerCase().includes(query) ||
+      link.note?.toLowerCase().includes(query)
     );
   });
 
@@ -978,7 +980,9 @@ export default function Links() {
     return (
       link.access_code?.toLowerCase().includes(query) ||
       link.group_name?.toLowerCase().includes(query) ||
-      link.invite_link.toLowerCase().includes(query)
+      link.invite_link.toLowerCase().includes(query) ||
+      link.client_email?.toLowerCase().includes(query) ||
+      link.note?.toLowerCase().includes(query)
     );
   });
 
