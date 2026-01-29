@@ -121,6 +121,28 @@ Deno.serve(async (req) => {
 
     const botToken = tokenSetting?.value;
 
+    // Test action to verify bot token
+    if (update.action === 'test_bot') {
+      if (!botToken) {
+        return new Response(JSON.stringify({ ok: false, error: 'Bot token not configured' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Get bot info to verify token
+      const botInfoResponse = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+      const botInfo = await botInfoResponse.json();
+      console.log('Bot info:', JSON.stringify(botInfo));
+      
+      return new Response(JSON.stringify({ 
+        ok: true, 
+        bot_info: botInfo,
+        token_prefix: botToken.substring(0, 10) + '...'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Handle bot commands (messages starting with /)
     if (update.message?.text?.startsWith('/')) {
       const message = update.message;
