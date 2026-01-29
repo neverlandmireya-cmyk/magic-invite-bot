@@ -54,16 +54,31 @@ function generateAccessCode(): string {
 
 // Send message to Telegram
 async function sendTelegramMessage(botToken: string, chatId: string | number, text: string, parseMode = 'HTML') {
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: parseMode,
-    }),
-  });
-  return response.json();
+  console.log(`Sending message to chat ${chatId}: ${text.substring(0, 50)}...`);
+  
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: parseMode,
+      }),
+    });
+    
+    const result = await response.json();
+    console.log('Telegram sendMessage response:', JSON.stringify(result));
+    
+    if (!result.ok) {
+      console.error('Failed to send message:', result.description);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error sending Telegram message:', error);
+    throw error;
+  }
 }
 
 // Check if user is admin (by checking admin_codes table with their Telegram ID)
