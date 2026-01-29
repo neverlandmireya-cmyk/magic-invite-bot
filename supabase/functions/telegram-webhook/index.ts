@@ -284,13 +284,15 @@ Deno.serve(async (req) => {
             break;
           }
 
-          // If no argument provided, show group list
+          // Parse arguments: /generate [group] [amount]
+          // Examples: /generate 1, /generate 1 50, /generate 2 100
           if (!args[0]) {
             let selectMsg = `📋 <b>Select a Group</b>\n\n`;
             groups.forEach((g, i) => {
               selectMsg += `<b>${i + 1}.</b> ${g.name}\n`;
             });
-            selectMsg += `\n💡 Reply with: /generate [number]\nExample: /generate 1`;
+            selectMsg += `\n💡 <b>Usage:</b> /generate [group] [amount]\n`;
+            selectMsg += `Example: /generate 1 50`;
             
             await sendTelegramMessage(commandBotToken, chatId, selectMsg);
             break;
@@ -314,6 +316,15 @@ Deno.serve(async (req) => {
               await sendTelegramMessage(commandBotToken, chatId, 
                 `❌ Invalid selection: "${arg}"\n\nUse /generate to see available groups.`);
               break;
+            }
+          }
+
+          // Parse amount (optional second argument)
+          let amount = 0;
+          if (args[1]) {
+            const parsedAmount = parseFloat(args[1]);
+            if (!isNaN(parsedAmount) && parsedAmount >= 0) {
+              amount = parsedAmount;
             }
           }
 
@@ -345,13 +356,24 @@ Deno.serve(async (req) => {
           const inviteLink = inviteResult.result.invite_link;
 
           // Save to database
-          await supabase.from('invite_links').insert({
+          const { data: insertedLink } = await supabase.from('invite_links').insert({
             invite_link: inviteLink,
             group_id: groupId,
             group_name: groupName,
             access_code: accessCode,
             status: 'active',
-          });
+          }).select('id').single();
+
+          // Save revenue if amount > 0
+          if (amount > 0 && insertedLink?.id) {
+            await supabase.from('revenue').insert({
+              link_id: insertedLink.id,
+              amount: amount,
+              access_code: accessCode,
+              created_by: `telegram:${username}`,
+              description: `Link generated via Telegram bot`,
+            });
+          }
 
           // Log activity
           await supabase.from('activity_logs').insert({
@@ -362,6 +384,7 @@ Deno.serve(async (req) => {
               access_code: accessCode,
               group_id: groupId,
               group_name: groupName,
+              amount: amount,
               generated_via: 'telegram_bot',
               telegram_user: username,
               telegram_user_id: userId,
@@ -374,6 +397,7 @@ Deno.serve(async (req) => {
             `New link created from Telegram`, [
             { name: 'Code', value: accessCode, inline: true },
             { name: 'Group', value: groupName, inline: true },
+            { name: 'Amount', value: amount > 0 ? `$${amount}` : 'N/A', inline: true },
             { name: 'By', value: `@${username}`, inline: true },
           ]);
 
@@ -383,8 +407,9 @@ Deno.serve(async (req) => {
           // Send success with copyable welcome message
           const successMsg = `✅ <b>Link Generated!</b>\n\n` +
             `📁 <b>Group:</b> ${groupName}\n` +
-            `📋 <b>Code:</b> <code>${accessCode}</code>\n\n` +
-            `━━━━━━━━━━━━━━━━━━━━━\n` +
+            `📋 <b>Code:</b> <code>${accessCode}</code>\n` +
+            (amount > 0 ? `💰 <b>Amount:</b> $${amount}\n` : '') +
+            `\n━━━━━━━━━━━━━━━━━━━━━\n` +
             `📨 <b>Welcome Message (copy below):</b>\n` +
             `━━━━━━━━━━━━━━━━━━━━━\n\n` +
             `<code>${welcomeMessage}</code>`;
