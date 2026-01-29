@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const DASHBOARD_URL = 'login.exylus.net';
+
 // Discord webhook logging helper
 async function sendDiscordLog(type: string, title: string, description: string, fields?: Array<{name: string, value: string, inline?: boolean}>, color?: number) {
   const webhookUrl = Deno.env.get("DISCORD_WEBHOOK_LOGS");
@@ -14,11 +16,11 @@ async function sendDiscordLog(type: string, title: string, description: string, 
   }
 
   const colors: Record<string, number> = {
-    join: 0x00FF00,     // Green
-    leave: 0xFF6B6B,    // Soft red
-    revoke: 0xFF0000,   // Red
-    activity: 0x5865F2, // Discord blue
-    bot: 0x00BFFF,      // Bot commands - light blue
+    join: 0x00FF00,
+    leave: 0xFF6B6B,
+    revoke: 0xFF0000,
+    activity: 0x5865F2,
+    bot: 0x00BFFF,
   };
 
   try {
@@ -81,7 +83,7 @@ async function sendTelegramMessage(botToken: string, chatId: string | number, te
   }
 }
 
-// Check if user is admin (by checking admin_codes table with their Telegram ID)
+// Check if user is admin
 async function isAdminUser(supabase: any, telegramUserId: number): Promise<boolean> {
   const { data } = await supabase
     .from('settings')
@@ -109,8 +111,12 @@ function parseGroupIds(value: string): Array<{id: string, name: string}> {
   }
 }
 
+// Generate welcome message (same format as dashboard)
+function getWelcomeMessage(inviteLink: string, accessCode: string): string {
+  return `Welcome!\n\nThanks for your purchase. Here are your access details:\n\nGroup: ${inviteLink}\n\nDashboard: ${DASHBOARD_URL}\nUser Code: ${accessCode}\n\nIf you need support, access the dashboard and visit the Support section.`;
+}
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -124,14 +130,14 @@ Deno.serve(async (req) => {
     const update = await req.json();
     console.log('Received Telegram update:', JSON.stringify(update, null, 2));
 
-    // Get command bot token (for sending messages/responses)
+    // Get command bot token
     const { data: commandTokenSetting } = await supabase
       .from('settings')
       .select('value')
       .eq('key', 'command_bot_token')
       .maybeSingle();
 
-    // Get link bot token (for generating invite links) - fallback to legacy bot_token
+    // Get link bot token
     const { data: linkTokenSetting } = await supabase
       .from('settings')
       .select('value')
@@ -150,7 +156,7 @@ Deno.serve(async (req) => {
     console.log('Command bot configured:', !!commandBotToken);
     console.log('Link bot configured:', !!linkBotToken);
 
-    // Test action to verify bot tokens
+    // Test action
     if (update.action === 'test_bot') {
       const results: any = { ok: true };
       
@@ -164,14 +170,12 @@ Deno.serve(async (req) => {
         results.link_bot = await linkBotInfo.json();
       }
       
-      console.log('Bot info:', JSON.stringify(results));
-      
       return new Response(JSON.stringify(results), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Handle bot commands (messages starting with /)
+    // Handle bot commands
     if (update.message?.text?.startsWith('/')) {
       const message = update.message;
       const chatId = message.chat.id;
@@ -190,13 +194,12 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Check if user is authorized admin
       const isAdmin = await isAdminUser(supabase, userId);
 
       switch (command) {
         case '/start': {
           const welcomeMsg = isAdmin 
-            ? `🎉 <b>Hello ${username}!</b>\n\nYou are an authorized admin.\n\n<b>Available commands:</b>\n/generate [group] - Generate invite link\n/groups - List available groups\n/status [code] - Check link status\n/revoke [code] - Revoke a link\n/stats - View statistics\n/help - Show help`
+            ? `🎉 <b>Hello ${username}!</b>\n\nYou are an authorized admin.\n\n<b>Available commands:</b>\n/generate [number] - Generate invite link\n/groups - List available groups\n/status [code] - Check link status\n/revoke [code] - Revoke a link\n/stats - View statistics\n/help - Show help`
             : `👋 <b>Hello ${username}!</b>\n\nYou don't have admin permissions.\n\nContact the administrator to get access.`;
           
           await sendTelegramMessage(commandBotToken, chatId, welcomeMsg);
@@ -210,10 +213,8 @@ Deno.serve(async (req) => {
           }
           
           const helpMsg = `📚 <b>Bot Commands</b>\n\n` +
-            `/generate [group] - Generate a new invite link\n` +
-            `  • Without args: uses first configured group\n` +
-            `  • With number: uses group by index (1, 2, 3...)\n` +
-            `  • With name: searches by group name\n` +
+            `/generate - Show groups and generate link\n` +
+            `/generate [number] - Generate for specific group\n` +
             `/groups - List all configured groups\n` +
             `/status [code] - Check link status\n` +
             `/revoke [code] - Revoke an active link\n` +
@@ -235,7 +236,6 @@ Deno.serve(async (req) => {
             break;
           }
 
-          // Get configured groups
           const { data: groupsSetting } = await supabase
             .from('settings')
             .select('value')
@@ -249,11 +249,11 @@ Deno.serve(async (req) => {
             break;
           }
 
-          let groupsMsg = `📋 <b>Configured Groups</b>\n\n`;
+          let groupsMsg = `📋 <b>Available Groups</b>\n\n`;
           groups.forEach((g, i) => {
-            groupsMsg += `${i + 1}. <b>${g.name}</b>\n   ID: <code>${g.id}</code>\n\n`;
+            groupsMsg += `<b>${i + 1}.</b> ${g.name}\n`;
           });
-          groupsMsg += `\n💡 Use /generate 1 to generate for the first group, /generate 2 for the second, etc.`;
+          groupsMsg += `\n💡 Use: /generate 1`;
           
           await sendTelegramMessage(commandBotToken, chatId, groupsMsg);
           break;
@@ -284,27 +284,36 @@ Deno.serve(async (req) => {
             break;
           }
 
+          // If no argument provided, show group list
+          if (!args[0]) {
+            let selectMsg = `📋 <b>Select a Group</b>\n\n`;
+            groups.forEach((g, i) => {
+              selectMsg += `<b>${i + 1}.</b> ${g.name}\n`;
+            });
+            selectMsg += `\n💡 Reply with: /generate [number]\nExample: /generate 1`;
+            
+            await sendTelegramMessage(commandBotToken, chatId, selectMsg);
+            break;
+          }
+
           // Determine which group to use
-          let selectedGroup = groups[0];
+          let selectedGroup = null;
+          const arg = args[0];
+          const idx = parseInt(arg);
           
-          if (args[0]) {
-            const arg = args[0];
-            // Check if it's a number (index)
-            const idx = parseInt(arg);
-            if (!isNaN(idx) && idx >= 1 && idx <= groups.length) {
-              selectedGroup = groups[idx - 1];
+          if (!isNaN(idx) && idx >= 1 && idx <= groups.length) {
+            selectedGroup = groups[idx - 1];
+          } else {
+            // Search by name
+            const found = groups.find(g => 
+              g.name.toLowerCase().includes(arg.toLowerCase())
+            );
+            if (found) {
+              selectedGroup = found;
             } else {
-              // Search by name (partial match)
-              const found = groups.find(g => 
-                g.name.toLowerCase().includes(arg.toLowerCase())
-              );
-              if (found) {
-                selectedGroup = found;
-              } else {
-                await sendTelegramMessage(commandBotToken, chatId, 
-                  `❌ Group not found: "${arg}"\n\nUse /groups to see available groups.`);
-                break;
-              }
+              await sendTelegramMessage(commandBotToken, chatId, 
+                `❌ Invalid selection: "${arg}"\n\nUse /generate to see available groups.`);
+              break;
             }
           }
 
@@ -312,7 +321,7 @@ Deno.serve(async (req) => {
           const groupName = selectedGroup.name;
           const accessCode = generateAccessCode();
 
-          // Create invite link via Telegram API using LINK BOT
+          // Create invite link
           const inviteResponse = await fetch(`https://api.telegram.org/bot${linkBotToken}/createChatInviteLink`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -329,14 +338,15 @@ Deno.serve(async (req) => {
           if (!inviteResult.ok) {
             console.error('Telegram API error:', inviteResult);
             await sendTelegramMessage(commandBotToken, chatId, 
-              `❌ Error: ${inviteResult.description || 'Could not create link'}\n\n` +
-              `Make sure the Link Bot (@${linkBotToken.split(':')[0]}...) is admin in the group.`);
+              `❌ Error: ${inviteResult.description || 'Could not create link'}\n\nMake sure the Link Bot is admin in the group.`);
             break;
           }
 
+          const inviteLink = inviteResult.result.invite_link;
+
           // Save to database
           await supabase.from('invite_links').insert({
-            invite_link: inviteResult.result.invite_link,
+            invite_link: inviteLink,
             group_id: groupId,
             group_name: groupName,
             access_code: accessCode,
@@ -367,11 +377,17 @@ Deno.serve(async (req) => {
             { name: 'By', value: `@${username}`, inline: true },
           ]);
 
-          const successMsg = `✅ <b>Link Generated</b>\n\n` +
+          // Generate welcome message (same format as dashboard)
+          const welcomeMessage = getWelcomeMessage(inviteLink, accessCode);
+
+          // Send success with copyable welcome message
+          const successMsg = `✅ <b>Link Generated!</b>\n\n` +
             `📁 <b>Group:</b> ${groupName}\n` +
-            `📋 <b>Code:</b> <code>${accessCode}</code>\n` +
-            `🔗 <b>Link:</b> ${inviteResult.result.invite_link}\n\n` +
-            `<i>Valid for 1 use only.</i>`;
+            `📋 <b>Code:</b> <code>${accessCode}</code>\n\n` +
+            `━━━━━━━━━━━━━━━━━━━━━\n` +
+            `📨 <b>Welcome Message (copy below):</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+            `<code>${welcomeMessage}</code>`;
           
           await sendTelegramMessage(commandBotToken, chatId, successMsg);
           break;
@@ -453,7 +469,7 @@ Deno.serve(async (req) => {
             break;
           }
 
-          // Revoke on Telegram using LINK BOT
+          // Revoke on Telegram
           const revokeResponse = await fetch(`https://api.telegram.org/bot${linkBotToken}/revokeChatInviteLink`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -485,7 +501,6 @@ Deno.serve(async (req) => {
             performed_by: `telegram:${username}`,
           });
 
-          // Send Discord log
           await sendDiscordLog('revoke', '🔴 Link Revoked via Bot', 
             `Link **${code}** revoked from Telegram`, [
             { name: 'By', value: `@${username}`, inline: true },
@@ -502,7 +517,6 @@ Deno.serve(async (req) => {
             break;
           }
 
-          // Get stats
           const { data: activeLinks } = await supabase
             .from('invite_links')
             .select('id', { count: 'exact' })
@@ -543,7 +557,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Handle chat_member updates (when someone joins/leaves)
+    // Handle chat_member updates
     if (update.chat_member) {
       const chatMember = update.chat_member;
       const newStatus = chatMember.new_chat_member?.status;
@@ -553,19 +567,15 @@ Deno.serve(async (req) => {
       const inviteLink = chatMember.invite_link?.invite_link;
 
       console.log(`Member status change: ${oldStatus} -> ${newStatus} for user ${user?.id} in chat ${chatId}`);
-      console.log(`Invite link used: ${inviteLink}`);
 
-      // Check if user left or was kicked (member -> left/kicked)
       const wasActiveMember = ['member', 'administrator', 'creator', 'restricted'].includes(oldStatus);
       const hasLeft = ['left', 'kicked', 'banned'].includes(newStatus);
 
       if (wasActiveMember && hasLeft) {
         console.log(`User ${user?.id} left/removed from chat ${chatId}`);
 
-        // Find the invite link in our database
         let linkRecord = null;
 
-        // First try to find by the exact invite link used
         if (inviteLink) {
           const { data } = await supabase
             .from('invite_links')
@@ -577,7 +587,6 @@ Deno.serve(async (req) => {
           linkRecord = data;
         }
 
-        // If not found by invite link, try to find by group_id and status = used
         if (!linkRecord && chatId) {
           const { data } = await supabase
             .from('invite_links')
@@ -590,8 +599,7 @@ Deno.serve(async (req) => {
           
           if (data?.used_at) {
             const usedAt = new Date(data.used_at);
-            const now = new Date();
-            const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+            const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
             if (usedAt > hourAgo) {
               linkRecord = data;
             }
@@ -601,9 +609,7 @@ Deno.serve(async (req) => {
         if (linkRecord && linkBotToken) {
           console.log(`Found link record: ${linkRecord.access_code}`);
 
-          // Revoke the link on Telegram using LINK BOT
-          const revokeUrl = `https://api.telegram.org/bot${linkBotToken}/revokeChatInviteLink`;
-          const revokeResponse = await fetch(revokeUrl, {
+          const revokeResponse = await fetch(`https://api.telegram.org/bot${linkBotToken}/revokeChatInviteLink`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -615,13 +621,11 @@ Deno.serve(async (req) => {
           const revokeResult = await revokeResponse.json();
           console.log('Revoke result:', JSON.stringify(revokeResult));
 
-          // Update status in database
           await supabase
             .from('invite_links')
             .update({ status: 'closed_by_telegram' })
             .eq('id', linkRecord.id);
 
-          // Log the activity
           await supabase.from('activity_logs').insert({
             action: 'auto_revoke_on_leave',
             entity_type: 'invite_link',
@@ -636,22 +640,17 @@ Deno.serve(async (req) => {
             performed_by: 'telegram-webhook',
           });
 
-          // Send Discord log for auto-revoke
           await sendDiscordLog('revoke', '⚠️ Auto-Revoked: User Left Group', 
             `Link **${linkRecord.access_code}** was automatically revoked`, [
             { name: 'Username', value: user?.username ? `@${user.username}` : 'N/A', inline: true },
             { name: 'User ID', value: String(user?.id || 'Unknown'), inline: true },
             { name: 'Group', value: chatMember.chat?.title || chatId || 'Unknown', inline: true },
-            { name: 'Telegram Revoked', value: revokeResult.ok ? '✅ Yes' : '❌ Failed', inline: true },
           ]);
 
           console.log(`Link ${linkRecord.access_code} revoked automatically`);
-        } else {
-          console.log('No matching link record found for this user');
         }
       }
 
-      // Handle when member uses a link to join
       if (newStatus === 'member' && inviteLink) {
         console.log(`User ${user?.id} joined using invite link: ${inviteLink}`);
         
@@ -696,7 +695,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Log when member leaves (even if no link found)
       if (wasActiveMember && hasLeft && !inviteLink) {
         await supabase.from('activity_logs').insert({
           action: 'member_left',
