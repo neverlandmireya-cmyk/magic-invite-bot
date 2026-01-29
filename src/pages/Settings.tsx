@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Save, Eye, EyeOff, AlertCircle, CheckCircle2, Bell } from 'lucide-react';
+import { Save, Eye, EyeOff, AlertCircle, CheckCircle2, Bell, Bot } from 'lucide-react';
 
 export default function Settings() {
   const { codeUser } = useAuth();
@@ -16,6 +16,7 @@ export default function Settings() {
   const [botTokenSet, setBotTokenSet] = useState(false);
   const [groupIds, setGroupIds] = useState('');
   const [notificationGroupId, setNotificationGroupId] = useState('');
+  const [telegramAdminIds, setTelegramAdminIds] = useState('');
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -45,6 +46,7 @@ export default function Settings() {
         setBotTokenMasked(data.settings.bot_token_masked || '');
         setGroupIds(data.settings.group_ids || '');
         setNotificationGroupId(data.settings.notification_group_id || '');
+        setTelegramAdminIds(data.settings.telegram_admin_ids || '');
       }
     } catch (error) {
       console.error('Failed to load settings');
@@ -75,7 +77,8 @@ export default function Settings() {
           adminCode: codeUser.accessCode,
           botToken: botToken.trim() || undefined, // Only send if user entered new token
           groupIds: groupIds,
-          notificationGroupId: notificationGroupId.trim()
+          notificationGroupId: notificationGroupId.trim(),
+          telegramAdminIds: telegramAdminIds.trim()
         }
       });
 
@@ -169,6 +172,53 @@ export default function Settings() {
                 <li>Grant "Invite Users via Link" permission</li>
                 <li>For channels, enable "Sign Messages" if needed</li>
               </ol>
+            </div>
+          </div>
+
+          <Button onClick={handleSave} disabled={saving} className="glow-sm">
+            <Save className="w-4 h-4 mr-2" />
+            {saving ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="glass">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="w-5 h-5" />
+            Telegram Bot Commands
+          </CardTitle>
+          <CardDescription>
+            Allow managing links directly from Telegram using bot commands
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="telegramAdminIds">Authorized Telegram User IDs</Label>
+            <Input
+              id="telegramAdminIds"
+              placeholder="123456789, 987654321"
+              value={telegramAdminIds}
+              onChange={(e) => setTelegramAdminIds(e.target.value)}
+              className="bg-input font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Comma-separated Telegram user IDs allowed to use bot commands. 
+              Send /myid to the bot to get your ID.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 flex gap-3">
+            <Bot className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-muted-foreground">
+              <p className="font-medium text-foreground mb-1">Available Commands:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li><code>/generate</code> - Generate invite link</li>
+                <li><code>/status [code]</code> - Check link status</li>
+                <li><code>/revoke [code]</code> - Revoke a link</li>
+                <li><code>/stats</code> - View statistics</li>
+                <li><code>/myid</code> - Get your Telegram ID</li>
+              </ul>
             </div>
           </div>
 
