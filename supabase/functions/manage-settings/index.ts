@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       },
     });
 
-    const { action, adminCode, botToken, groupIds, notificationGroupId } = await req.json();
+    const { action, adminCode, botToken, groupIds, notificationGroupId, telegramAdminIds } = await req.json();
 
     // Validate admin code for all actions
     if (!adminCode || typeof adminCode !== 'string' || adminCode.length < 6) {
@@ -114,6 +114,13 @@ Deno.serve(async (req) => {
         await supabase
           .from('settings')
           .upsert({ key: 'notification_group_id', value: notificationGroupId }, { onConflict: 'key' });
+      }
+
+      // Save Telegram admin IDs (for bot commands authorization)
+      if (telegramAdminIds !== undefined) {
+        await supabase
+          .from('settings')
+          .upsert({ key: 'telegram_admin_ids', value: telegramAdminIds }, { onConflict: 'key' });
       }
 
       console.log('Settings saved successfully by admin:', adminData.id);
