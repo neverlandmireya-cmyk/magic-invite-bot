@@ -11,13 +11,20 @@ import { Save, Eye, EyeOff, AlertCircle, CheckCircle2, Bell, Bot } from 'lucide-
 
 export default function Settings() {
   const { codeUser } = useAuth();
-  const [botToken, setBotToken] = useState('');
-  const [botTokenMasked, setBotTokenMasked] = useState('');
-  const [botTokenSet, setBotTokenSet] = useState(false);
+  // Command bot (for /generate, /status, etc.)
+  const [commandBotToken, setCommandBotToken] = useState('');
+  const [commandBotTokenMasked, setCommandBotTokenMasked] = useState('');
+  const [commandBotTokenSet, setCommandBotTokenSet] = useState(false);
+  const [showCommandToken, setShowCommandToken] = useState(false);
+  // Link bot (for generating invite links)
+  const [linkBotToken, setLinkBotToken] = useState('');
+  const [linkBotTokenMasked, setLinkBotTokenMasked] = useState('');
+  const [linkBotTokenSet, setLinkBotTokenSet] = useState(false);
+  const [showLinkToken, setShowLinkToken] = useState(false);
+  // Other settings
   const [groupIds, setGroupIds] = useState('');
   const [notificationGroupId, setNotificationGroupId] = useState('');
   const [telegramAdminIds, setTelegramAdminIds] = useState('');
-  const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -42,8 +49,17 @@ export default function Settings() {
       if (error) throw error;
 
       if (data?.success && data.settings) {
-        setBotTokenSet(data.settings.bot_token_set === 'true');
-        setBotTokenMasked(data.settings.bot_token_masked || '');
+        // Command bot (webhook)
+        setCommandBotTokenSet(data.settings.command_bot_token_set === 'true');
+        setCommandBotTokenMasked(data.settings.command_bot_token_masked || '');
+        // Link bot (generates invites)
+        setLinkBotTokenSet(data.settings.link_bot_token_set === 'true');
+        setLinkBotTokenMasked(data.settings.link_bot_token_masked || '');
+        // Legacy fallback: if old bot_token exists, show it as link bot
+        if (!data.settings.link_bot_token_set && data.settings.bot_token_set === 'true') {
+          setLinkBotTokenSet(true);
+          setLinkBotTokenMasked(data.settings.bot_token_masked || '');
+        }
         setGroupIds(data.settings.group_ids || '');
         setNotificationGroupId(data.settings.notification_group_id || '');
         setTelegramAdminIds(data.settings.telegram_admin_ids || '');
@@ -62,12 +78,6 @@ export default function Settings() {
       return;
     }
 
-    // If no new token is entered but one exists, only update group IDs
-    if (!botToken.trim() && !botTokenSet) {
-      toast.error('Bot token is required');
-      return;
-    }
-
     setSaving(true);
 
     try {
@@ -75,7 +85,8 @@ export default function Settings() {
         body: { 
           action: 'save',
           adminCode: codeUser.accessCode,
-          botToken: botToken.trim() || undefined, // Only send if user entered new token
+          commandBotToken: commandBotToken.trim() || undefined,
+          linkBotToken: linkBotToken.trim() || undefined,
           groupIds: groupIds,
           notificationGroupId: notificationGroupId.trim(),
           telegramAdminIds: telegramAdminIds.trim()
@@ -86,8 +97,9 @@ export default function Settings() {
 
       if (data?.success) {
         toast.success('Settings saved successfully');
-        setBotToken(''); // Clear the input after save
-        loadSettings(); // Reload to get updated masked token
+        setCommandBotToken('');
+        setLinkBotToken('');
+        loadSettings();
       } else {
         throw new Error(data?.error || 'Failed to save');
       }
@@ -113,40 +125,74 @@ export default function Settings() {
         <CardHeader>
           <CardTitle>Telegram Bot Configuration</CardTitle>
           <CardDescription>
-            Enter your bot token and group IDs to enable invite link generation
+            Configure two bots: one for commands and one for generating invite links
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Command Bot Token */}
           <div className="space-y-2">
-            <Label htmlFor="token">Bot Token</Label>
+            <Label htmlFor="commandToken">🤖 Command Bot Token (Webhook)</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Bot that receives commands like /generate, /status, etc.
+            </p>
             
-            {botTokenSet && (
+            {commandBotTokenSet && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                 <CheckCircle2 className="w-4 h-4 text-green-500" />
-                <span>Token configured: {botTokenMasked}</span>
+                <span>Token configured: {commandBotTokenMasked}</span>
               </div>
             )}
             
             <div className="relative">
               <Input
-                id="token"
-                type={showToken ? 'text' : 'password'}
-                placeholder={botTokenSet ? "Enter new token to replace..." : "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"}
-                value={botToken}
-                onChange={(e) => setBotToken(e.target.value)}
+                id="commandToken"
+                type={showCommandToken ? 'text' : 'password'}
+                placeholder={commandBotTokenSet ? "Enter new token to replace..." : "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"}
+                value={commandBotToken}
+                onChange={(e) => setCommandBotToken(e.target.value)}
                 className="pr-10 bg-input font-mono text-sm"
               />
               <button
                 type="button"
-                onClick={() => setShowToken(!showToken)}
+                onClick={() => setShowCommandToken(!showCommandToken)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showCommandToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Get this from @BotFather on Telegram. {botTokenSet && "Leave empty to keep current token."}
+          </div>
+
+          {/* Link Bot Token */}
+          <div className="space-y-2">
+            <Label htmlFor="linkToken">🔗 Link Bot Token (Invite Generator)</Label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Bot with admin rights in groups that generates invite links.
             </p>
+            
+            {linkBotTokenSet && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+                <span>Token configured: {linkBotTokenMasked}</span>
+              </div>
+            )}
+            
+            <div className="relative">
+              <Input
+                id="linkToken"
+                type={showLinkToken ? 'text' : 'password'}
+                placeholder={linkBotTokenSet ? "Enter new token to replace..." : "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"}
+                value={linkBotToken}
+                onChange={(e) => setLinkBotToken(e.target.value)}
+                className="pr-10 bg-input font-mono text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowLinkToken(!showLinkToken)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showLinkToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -166,11 +212,10 @@ export default function Settings() {
           <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 flex gap-3">
             <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
             <div className="text-sm text-muted-foreground">
-              <p className="font-medium text-foreground mb-1">Important Setup Steps:</p>
+              <p className="font-medium text-foreground mb-1">Setup:</p>
               <ol className="list-decimal list-inside space-y-1">
-                <li>Add your bot as an admin in the group/channel</li>
-                <li>Grant "Invite Users via Link" permission</li>
-                <li>For channels, enable "Sign Messages" if needed</li>
+                <li><strong>Link Bot</strong>: Add as admin in groups with "Invite Users" permission</li>
+                <li><strong>Command Bot</strong>: Configure webhook (see below)</li>
               </ol>
             </div>
           </div>

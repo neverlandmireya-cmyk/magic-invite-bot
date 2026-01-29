@@ -112,33 +112,49 @@ Deno.serve(async (req) => {
     const update = await req.json();
     console.log('Received Telegram update:', JSON.stringify(update, null, 2));
 
-    // Get bot token from settings
-    const { data: tokenSetting } = await supabase
+    // Get command bot token (for sending messages/responses)
+    const { data: commandTokenSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'command_bot_token')
+      .maybeSingle();
+
+    // Get link bot token (for generating invite links) - fallback to legacy bot_token
+    const { data: linkTokenSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'link_bot_token')
+      .maybeSingle();
+    
+    const { data: legacyTokenSetting } = await supabase
       .from('settings')
       .select('value')
       .eq('key', 'bot_token')
       .maybeSingle();
 
-    const botToken = tokenSetting?.value;
+    const commandBotToken = commandTokenSetting?.value;
+    const linkBotToken = linkTokenSetting?.value || legacyTokenSetting?.value;
 
-    // Test action to verify bot token
+    console.log('Command bot configured:', !!commandBotToken);
+    console.log('Link bot configured:', !!linkBotToken);
+
+    // Test action to verify bot tokens
     if (update.action === 'test_bot') {
-      if (!botToken) {
-        return new Response(JSON.stringify({ ok: false, error: 'Bot token not configured' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      const results: any = { ok: true };
+      
+      if (commandBotToken) {
+        const commandBotInfo = await fetch(`https://api.telegram.org/bot${commandBotToken}/getMe`);
+        results.command_bot = await commandBotInfo.json();
       }
       
-      // Get bot info to verify token
-      const botInfoResponse = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
-      const botInfo = await botInfoResponse.json();
-      console.log('Bot info:', JSON.stringify(botInfo));
+      if (linkBotToken) {
+        const linkBotInfo = await fetch(`https://api.telegram.org/bot${linkBotToken}/getMe`);
+        results.link_bot = await linkBotInfo.json();
+      }
       
-      return new Response(JSON.stringify({ 
-        ok: true, 
-        bot_info: botInfo,
-        token_prefix: botToken.substring(0, 10) + '...'
-      }), {
+      console.log('Bot info:', JSON.stringify(results));
+      
+      return new Response(JSON.stringify(results), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -155,8 +171,8 @@ Deno.serve(async (req) => {
 
       console.log(`Command received: ${command} from user ${userId} (${username})`);
 
-      if (!botToken) {
-        console.log('Bot token not configured');
+      if (!commandBotToken) {
+        console.log('Command bot token not configured');
         return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -171,13 +187,13 @@ Deno.serve(async (req) => {
             ? `🎉 <b>¡Hola ${username}!</b>\n\nEres administrador autorizado.\n\n<b>Comandos disponibles:</b>\n/generate - Generar enlace de invitación\n/status [código] - Ver estado de un enlace\n/revoke [código] - Revocar un enlace\n/stats - Ver estadísticas\n/help - Ayuda`
             : `👋 <b>¡Hola ${username}!</b>\n\nNo tienes permisos de administrador.\n\nContacta al administrador para obtener acceso.`;
           
-          await sendTelegramMessage(botToken, chatId, welcomeMsg);
+          await sendTelegramMessage(commandBotToken, chatId, welcomeMsg);
           break;
         }
 
         case '/help': {
           if (!isAdmin) {
-            await sendTelegramMessage(botToken, chatId, '❌ No tienes permisos para usar este bot.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para usar este bot.');
             break;
           }
           
@@ -188,18 +204,23 @@ Deno.serve(async (req) => {
             `/stats - Muestra estadísticas generales\n` +
             `/myid - Muestra tu ID de Telegram`;
           
-          await sendTelegramMessage(botToken, chatId, helpMsg);
+          await sendTelegramMessage(commandBotToken, chatId, helpMsg);
           break;
         }
 
         case '/myid': {
-          await sendTelegramMessage(botToken, chatId, `🆔 Tu ID de Telegram: <code>${userId}</code>`);
+          await sendTelegramMessage(commandBotToken, chatId, `🆔 Tu ID de Telegram: <code>${userId}</code>`);
           break;
         }
 
         case '/generate': {
           if (!isAdmin) {
-            await sendTelegramMessage(botToken, chatId, '❌ No tienes permisos para generar enlaces.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para generar enlaces.');
+            break;
+          }
+
+          if (!linkBotToken) {
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ El Link Bot no está configurado. Configúralo en Settings.');
             break;
           }
 
@@ -211,15 +232,15 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (!groupSetting?.value) {
-            await sendTelegramMessage(botToken, chatId, '⚠️ No hay grupo configurado. Configura el Group ID en el panel.');
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ No hay grupo configurado. Configura el Group ID en el panel.');
             break;
           }
 
           const groupId = groupSetting.value;
           const accessCode = generateAccessCode();
 
-          // Create invite link via Telegram API
-          const inviteResponse = await fetch(`https://api.telegram.org/bot${botToken}/createChatInviteLink`, {
+          // Create invite link via Telegram API using LINK BOT
+          const inviteResponse = await fetch(`https://api.telegram.org/bot${linkBotToken}/createChatInviteLink`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -233,7 +254,7 @@ Deno.serve(async (req) => {
           const inviteResult = await inviteResponse.json();
 
           if (!inviteResult.ok) {
-            await sendTelegramMessage(botToken, chatId, `❌ Error: ${inviteResult.description || 'No se pudo crear el enlace'}`);
+            await sendTelegramMessage(commandBotToken, chatId, `❌ Error: ${inviteResult.description || 'No se pudo crear el enlace'}`);
             break;
           }
 
@@ -279,18 +300,18 @@ Deno.serve(async (req) => {
             `🔗 <b>Enlace:</b> ${inviteResult.result.invite_link}\n\n` +
             `<i>El enlace es válido para 1 uso.</i>`;
           
-          await sendTelegramMessage(botToken, chatId, successMsg);
+          await sendTelegramMessage(commandBotToken, chatId, successMsg);
           break;
         }
 
         case '/status': {
           if (!isAdmin) {
-            await sendTelegramMessage(botToken, chatId, '❌ No tienes permisos para consultar estados.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para consultar estados.');
             break;
           }
 
           if (!args[0]) {
-            await sendTelegramMessage(botToken, chatId, '⚠️ Uso: /status [código]\nEjemplo: /status ABC123');
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Uso: /status [código]\nEjemplo: /status ABC123');
             break;
           }
 
@@ -302,7 +323,7 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (!link) {
-            await sendTelegramMessage(botToken, chatId, `❌ No se encontró el código: ${code}`);
+            await sendTelegramMessage(commandBotToken, chatId, `❌ No se encontró el código: ${code}`);
             break;
           }
 
@@ -322,18 +343,23 @@ Deno.serve(async (req) => {
             `📝 <b>Nota:</b> ${link.note || 'N/A'}\n` +
             `📅 <b>Creado:</b> ${new Date(link.created_at).toLocaleString('es-ES')}`;
           
-          await sendTelegramMessage(botToken, chatId, statusMsg);
+          await sendTelegramMessage(commandBotToken, chatId, statusMsg);
           break;
         }
 
         case '/revoke': {
           if (!isAdmin) {
-            await sendTelegramMessage(botToken, chatId, '❌ No tienes permisos para revocar enlaces.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para revocar enlaces.');
             break;
           }
 
           if (!args[0]) {
-            await sendTelegramMessage(botToken, chatId, '⚠️ Uso: /revoke [código]\nEjemplo: /revoke ABC123');
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Uso: /revoke [código]\nEjemplo: /revoke ABC123');
+            break;
+          }
+
+          if (!linkBotToken) {
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ El Link Bot no está configurado.');
             break;
           }
 
@@ -345,17 +371,17 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (!link) {
-            await sendTelegramMessage(botToken, chatId, `❌ No se encontró el código: ${code}`);
+            await sendTelegramMessage(commandBotToken, chatId, `❌ No se encontró el código: ${code}`);
             break;
           }
 
           if (link.status !== 'active') {
-            await sendTelegramMessage(botToken, chatId, `⚠️ El enlace ya no está activo (estado: ${link.status})`);
+            await sendTelegramMessage(commandBotToken, chatId, `⚠️ El enlace ya no está activo (estado: ${link.status})`);
             break;
           }
 
-          // Revoke on Telegram
-          const revokeResponse = await fetch(`https://api.telegram.org/bot${botToken}/revokeChatInviteLink`, {
+          // Revoke on Telegram using LINK BOT
+          const revokeResponse = await fetch(`https://api.telegram.org/bot${linkBotToken}/revokeChatInviteLink`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -393,13 +419,13 @@ Deno.serve(async (req) => {
             { name: 'Telegram OK', value: revokeResult.ok ? '✅' : '❌', inline: true },
           ]);
 
-          await sendTelegramMessage(botToken, chatId, `✅ Enlace <code>${code}</code> revocado exitosamente.`);
+          await sendTelegramMessage(commandBotToken, chatId, `✅ Enlace <code>${code}</code> revocado exitosamente.`);
           break;
         }
 
         case '/stats': {
           if (!isAdmin) {
-            await sendTelegramMessage(botToken, chatId, '❌ No tienes permisos para ver estadísticas.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para ver estadísticas.');
             break;
           }
 
@@ -429,13 +455,13 @@ Deno.serve(async (req) => {
             `🔴 <b>Revocados:</b> ${revokedLinks?.length || 0}\n` +
             `📊 <b>Total:</b> ${totalLinks?.length || 0}`;
           
-          await sendTelegramMessage(botToken, chatId, statsMsg);
+          await sendTelegramMessage(commandBotToken, chatId, statsMsg);
           break;
         }
 
         default:
           if (isAdmin) {
-            await sendTelegramMessage(botToken, chatId, '❓ Comando no reconocido. Usa /help para ver los comandos disponibles.');
+            await sendTelegramMessage(commandBotToken, chatId, '❓ Comando no reconocido. Usa /help para ver los comandos disponibles.');
           }
       }
 
@@ -499,11 +525,11 @@ Deno.serve(async (req) => {
           }
         }
 
-        if (linkRecord && botToken) {
+        if (linkRecord && linkBotToken) {
           console.log(`Found link record: ${linkRecord.access_code}`);
 
-          // Revoke the link on Telegram
-          const revokeUrl = `https://api.telegram.org/bot${botToken}/revokeChatInviteLink`;
+          // Revoke the link on Telegram using LINK BOT
+          const revokeUrl = `https://api.telegram.org/bot${linkBotToken}/revokeChatInviteLink`;
           const revokeResponse = await fetch(revokeUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

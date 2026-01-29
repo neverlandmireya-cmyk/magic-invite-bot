@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
       },
     });
 
-    const { action, adminCode, botToken, groupIds, notificationGroupId, telegramAdminIds } = await req.json();
+    const { action, adminCode, commandBotToken, linkBotToken, botToken, groupIds, notificationGroupId, telegramAdminIds } = await req.json();
 
     // Validate admin code for all actions
     if (!adminCode || typeof adminCode !== 'string' || adminCode.length < 6) {
@@ -63,14 +63,19 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Return settings but mask the bot token
+      // Return settings but mask the bot tokens
       const result: Record<string, string> = {};
       settings?.forEach((setting) => {
-        if (setting.key === 'bot_token') {
-          // Only return whether token is set, not the actual value
-          result['bot_token_set'] = setting.value ? 'true' : 'false';
-          // Return masked version for display
-          result['bot_token_masked'] = setting.value 
+        if (setting.key === 'command_bot_token') {
+          result['command_bot_token_set'] = setting.value ? 'true' : 'false';
+          result['command_bot_token_masked'] = setting.value 
+            ? setting.value.substring(0, 8) + '...' + setting.value.slice(-4)
+            : '';
+        } else if (setting.key === 'link_bot_token' || setting.key === 'bot_token') {
+          // Handle both new 'link_bot_token' and legacy 'bot_token'
+          const keyPrefix = setting.key === 'link_bot_token' ? 'link_bot_token' : 'bot_token';
+          result[`${keyPrefix}_set`] = setting.value ? 'true' : 'false';
+          result[`${keyPrefix}_masked`] = setting.value 
             ? setting.value.substring(0, 8) + '...' + setting.value.slice(-4)
             : '';
         } else {
@@ -87,9 +92,38 @@ Deno.serve(async (req) => {
 
     // SAVE settings
     if (action === 'save') {
-      // Validate bot token format (basic check)
+      const tokenPattern = /^\d+:[A-Za-z0-9_-]+$/;
+      
+      // Save command bot token (for webhook/commands)
+      if (commandBotToken && typeof commandBotToken === 'string' && commandBotToken.trim()) {
+        if (!tokenPattern.test(commandBotToken.trim())) {
+          return new Response(
+            JSON.stringify({ error: "Invalid command bot token format" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        await supabase
+          .from('settings')
+          .upsert({ key: 'command_bot_token', value: commandBotToken.trim() }, { onConflict: 'key' });
+      }
+
+      // Save link bot token (for generating invites)
+      if (linkBotToken && typeof linkBotToken === 'string' && linkBotToken.trim()) {
+        if (!tokenPattern.test(linkBotToken.trim())) {
+          return new Response(
+            JSON.stringify({ error: "Invalid link bot token format" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        await supabase
+          .from('settings')
+          .upsert({ key: 'link_bot_token', value: linkBotToken.trim() }, { onConflict: 'key' });
+      }
+
+      // Legacy: also save as bot_token for backward compatibility
       if (botToken && typeof botToken === 'string' && botToken.trim()) {
-        const tokenPattern = /^\d+:[A-Za-z0-9_-]+$/;
         if (!tokenPattern.test(botToken.trim())) {
           return new Response(
             JSON.stringify({ error: "Invalid bot token format" }),
