@@ -83,7 +83,6 @@ async function sendTelegramMessage(botToken: string, chatId: string | number, te
 
 // Check if user is admin (by checking admin_codes table with their Telegram ID)
 async function isAdminUser(supabase: any, telegramUserId: number): Promise<boolean> {
-  // Check if there's a setting that maps this Telegram user to admin
   const { data } = await supabase
     .from('settings')
     .select('value')
@@ -95,6 +94,19 @@ async function isAdminUser(supabase: any, telegramUserId: number): Promise<boole
     return adminIds.includes(String(telegramUserId));
   }
   return false;
+}
+
+// Parse group_ids setting (JSON array of objects with id and name)
+function parseGroupIds(value: string): Array<{id: string, name: string}> {
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter(g => g.id && typeof g.id === 'string');
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 Deno.serve(async (req) => {
@@ -164,7 +176,7 @@ Deno.serve(async (req) => {
       const message = update.message;
       const chatId = message.chat.id;
       const userId = message.from.id;
-      const username = message.from.username || message.from.first_name || 'Usuario';
+      const username = message.from.username || message.from.first_name || 'User';
       const text = message.text;
       const command = text.split(' ')[0].toLowerCase().replace('@', '').split('@')[0];
       const args = text.split(' ').slice(1);
@@ -184,8 +196,8 @@ Deno.serve(async (req) => {
       switch (command) {
         case '/start': {
           const welcomeMsg = isAdmin 
-            ? `🎉 <b>¡Hola ${username}!</b>\n\nEres administrador autorizado.\n\n<b>Comandos disponibles:</b>\n/generate - Generar enlace de invitación\n/status [código] - Ver estado de un enlace\n/revoke [código] - Revocar un enlace\n/stats - Ver estadísticas\n/help - Ayuda`
-            : `👋 <b>¡Hola ${username}!</b>\n\nNo tienes permisos de administrador.\n\nContacta al administrador para obtener acceso.`;
+            ? `🎉 <b>Hello ${username}!</b>\n\nYou are an authorized admin.\n\n<b>Available commands:</b>\n/generate [group] - Generate invite link\n/groups - List available groups\n/status [code] - Check link status\n/revoke [code] - Revoke a link\n/stats - View statistics\n/help - Show help`
+            : `👋 <b>Hello ${username}!</b>\n\nYou don't have admin permissions.\n\nContact the administrator to get access.`;
           
           await sendTelegramMessage(commandBotToken, chatId, welcomeMsg);
           break;
@@ -193,50 +205,111 @@ Deno.serve(async (req) => {
 
         case '/help': {
           if (!isAdmin) {
-            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para usar este bot.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ You don\'t have permission to use this bot.');
             break;
           }
           
-          const helpMsg = `📚 <b>Comandos del Bot</b>\n\n` +
-            `/generate - Genera un nuevo enlace de invitación\n` +
-            `/status [código] - Consulta el estado de un enlace\n` +
-            `/revoke [código] - Revoca un enlace activo\n` +
-            `/stats - Muestra estadísticas generales\n` +
-            `/myid - Muestra tu ID de Telegram`;
+          const helpMsg = `📚 <b>Bot Commands</b>\n\n` +
+            `/generate [group] - Generate a new invite link\n` +
+            `  • Without args: uses first configured group\n` +
+            `  • With number: uses group by index (1, 2, 3...)\n` +
+            `  • With name: searches by group name\n` +
+            `/groups - List all configured groups\n` +
+            `/status [code] - Check link status\n` +
+            `/revoke [code] - Revoke an active link\n` +
+            `/stats - Show general statistics\n` +
+            `/myid - Show your Telegram ID`;
           
           await sendTelegramMessage(commandBotToken, chatId, helpMsg);
           break;
         }
 
         case '/myid': {
-          await sendTelegramMessage(commandBotToken, chatId, `🆔 Tu ID de Telegram: <code>${userId}</code>`);
+          await sendTelegramMessage(commandBotToken, chatId, `🆔 Your Telegram ID: <code>${userId}</code>`);
+          break;
+        }
+
+        case '/groups': {
+          if (!isAdmin) {
+            await sendTelegramMessage(commandBotToken, chatId, '❌ You don\'t have permission to use this bot.');
+            break;
+          }
+
+          // Get configured groups
+          const { data: groupsSetting } = await supabase
+            .from('settings')
+            .select('value')
+            .eq('key', 'group_ids')
+            .maybeSingle();
+
+          const groups = groupsSetting?.value ? parseGroupIds(groupsSetting.value) : [];
+
+          if (groups.length === 0) {
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ No groups configured. Add groups in the Settings panel.');
+            break;
+          }
+
+          let groupsMsg = `📋 <b>Configured Groups</b>\n\n`;
+          groups.forEach((g, i) => {
+            groupsMsg += `${i + 1}. <b>${g.name}</b>\n   ID: <code>${g.id}</code>\n\n`;
+          });
+          groupsMsg += `\n💡 Use /generate 1 to generate for the first group, /generate 2 for the second, etc.`;
+          
+          await sendTelegramMessage(commandBotToken, chatId, groupsMsg);
           break;
         }
 
         case '/generate': {
           if (!isAdmin) {
-            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para generar enlaces.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ You don\'t have permission to generate links.');
             break;
           }
 
           if (!linkBotToken) {
-            await sendTelegramMessage(commandBotToken, chatId, '⚠️ El Link Bot no está configurado. Configúralo en Settings.');
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Link Bot is not configured. Set it up in Settings.');
             break;
           }
 
-          // Get configured group ID
-          const { data: groupSetting } = await supabase
+          // Get configured groups
+          const { data: groupsSetting } = await supabase
             .from('settings')
             .select('value')
-            .eq('key', 'group_id')
+            .eq('key', 'group_ids')
             .maybeSingle();
 
-          if (!groupSetting?.value) {
-            await sendTelegramMessage(commandBotToken, chatId, '⚠️ No hay grupo configurado. Configura el Group ID en el panel.');
+          const groups = groupsSetting?.value ? parseGroupIds(groupsSetting.value) : [];
+
+          if (groups.length === 0) {
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ No groups configured. Add groups in the Settings panel.');
             break;
           }
 
-          const groupId = groupSetting.value;
+          // Determine which group to use
+          let selectedGroup = groups[0];
+          
+          if (args[0]) {
+            const arg = args[0];
+            // Check if it's a number (index)
+            const idx = parseInt(arg);
+            if (!isNaN(idx) && idx >= 1 && idx <= groups.length) {
+              selectedGroup = groups[idx - 1];
+            } else {
+              // Search by name (partial match)
+              const found = groups.find(g => 
+                g.name.toLowerCase().includes(arg.toLowerCase())
+              );
+              if (found) {
+                selectedGroup = found;
+              } else {
+                await sendTelegramMessage(commandBotToken, chatId, 
+                  `❌ Group not found: "${arg}"\n\nUse /groups to see available groups.`);
+                break;
+              }
+            }
+          }
+
+          const groupId = selectedGroup.id;
+          const groupName = selectedGroup.name;
           const accessCode = generateAccessCode();
 
           // Create invite link via Telegram API using LINK BOT
@@ -254,22 +327,18 @@ Deno.serve(async (req) => {
           const inviteResult = await inviteResponse.json();
 
           if (!inviteResult.ok) {
-            await sendTelegramMessage(commandBotToken, chatId, `❌ Error: ${inviteResult.description || 'No se pudo crear el enlace'}`);
+            console.error('Telegram API error:', inviteResult);
+            await sendTelegramMessage(commandBotToken, chatId, 
+              `❌ Error: ${inviteResult.description || 'Could not create link'}\n\n` +
+              `Make sure the Link Bot (@${linkBotToken.split(':')[0]}...) is admin in the group.`);
             break;
           }
-
-          // Get group name
-          const { data: groupNameSetting } = await supabase
-            .from('settings')
-            .select('value')
-            .eq('key', 'group_name')
-            .maybeSingle();
 
           // Save to database
           await supabase.from('invite_links').insert({
             invite_link: inviteResult.result.invite_link,
             group_id: groupId,
-            group_name: groupNameSetting?.value || 'Telegram Group',
+            group_name: groupName,
             access_code: accessCode,
             status: 'active',
           });
@@ -281,6 +350,8 @@ Deno.serve(async (req) => {
             entity_id: accessCode,
             details: { 
               access_code: accessCode,
+              group_id: groupId,
+              group_name: groupName,
               generated_via: 'telegram_bot',
               telegram_user: username,
               telegram_user_id: userId,
@@ -292,13 +363,15 @@ Deno.serve(async (req) => {
           await sendDiscordLog('bot', '🤖 Link Generated via Bot', 
             `New link created from Telegram`, [
             { name: 'Code', value: accessCode, inline: true },
+            { name: 'Group', value: groupName, inline: true },
             { name: 'By', value: `@${username}`, inline: true },
           ]);
 
-          const successMsg = `✅ <b>Enlace generado</b>\n\n` +
-            `📋 <b>Código:</b> <code>${accessCode}</code>\n` +
-            `🔗 <b>Enlace:</b> ${inviteResult.result.invite_link}\n\n` +
-            `<i>El enlace es válido para 1 uso.</i>`;
+          const successMsg = `✅ <b>Link Generated</b>\n\n` +
+            `📁 <b>Group:</b> ${groupName}\n` +
+            `📋 <b>Code:</b> <code>${accessCode}</code>\n` +
+            `🔗 <b>Link:</b> ${inviteResult.result.invite_link}\n\n` +
+            `<i>Valid for 1 use only.</i>`;
           
           await sendTelegramMessage(commandBotToken, chatId, successMsg);
           break;
@@ -306,12 +379,12 @@ Deno.serve(async (req) => {
 
         case '/status': {
           if (!isAdmin) {
-            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para consultar estados.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ You don\'t have permission to check status.');
             break;
           }
 
           if (!args[0]) {
-            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Uso: /status [código]\nEjemplo: /status ABC123');
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Usage: /status [code]\nExample: /status ABC123');
             break;
           }
 
@@ -323,7 +396,7 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (!link) {
-            await sendTelegramMessage(commandBotToken, chatId, `❌ No se encontró el código: ${code}`);
+            await sendTelegramMessage(commandBotToken, chatId, `❌ Code not found: ${code}`);
             break;
           }
 
@@ -335,13 +408,13 @@ Deno.serve(async (req) => {
             'banned': '🚫',
           };
 
-          const statusMsg = `📊 <b>Estado del enlace</b>\n\n` +
-            `📋 <b>Código:</b> <code>${link.access_code}</code>\n` +
-            `${statusEmoji[link.status] || '⚪'} <b>Estado:</b> ${link.status}\n` +
-            `📁 <b>Grupo:</b> ${link.group_name || 'N/A'}\n` +
+          const statusMsg = `📊 <b>Link Status</b>\n\n` +
+            `📋 <b>Code:</b> <code>${link.access_code}</code>\n` +
+            `${statusEmoji[link.status] || '⚪'} <b>Status:</b> ${link.status}\n` +
+            `📁 <b>Group:</b> ${link.group_name || 'N/A'}\n` +
             `📧 <b>Email:</b> ${link.client_email || 'N/A'}\n` +
-            `📝 <b>Nota:</b> ${link.note || 'N/A'}\n` +
-            `📅 <b>Creado:</b> ${new Date(link.created_at).toLocaleString('es-ES')}`;
+            `📝 <b>Note:</b> ${link.note || 'N/A'}\n` +
+            `📅 <b>Created:</b> ${new Date(link.created_at).toLocaleString('en-US')}`;
           
           await sendTelegramMessage(commandBotToken, chatId, statusMsg);
           break;
@@ -349,17 +422,17 @@ Deno.serve(async (req) => {
 
         case '/revoke': {
           if (!isAdmin) {
-            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para revocar enlaces.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ You don\'t have permission to revoke links.');
             break;
           }
 
           if (!args[0]) {
-            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Uso: /revoke [código]\nEjemplo: /revoke ABC123');
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Usage: /revoke [code]\nExample: /revoke ABC123');
             break;
           }
 
           if (!linkBotToken) {
-            await sendTelegramMessage(commandBotToken, chatId, '⚠️ El Link Bot no está configurado.');
+            await sendTelegramMessage(commandBotToken, chatId, '⚠️ Link Bot is not configured.');
             break;
           }
 
@@ -371,12 +444,12 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (!link) {
-            await sendTelegramMessage(commandBotToken, chatId, `❌ No se encontró el código: ${code}`);
+            await sendTelegramMessage(commandBotToken, chatId, `❌ Code not found: ${code}`);
             break;
           }
 
           if (link.status !== 'active') {
-            await sendTelegramMessage(commandBotToken, chatId, `⚠️ El enlace ya no está activo (estado: ${link.status})`);
+            await sendTelegramMessage(commandBotToken, chatId, `⚠️ Link is no longer active (status: ${link.status})`);
             break;
           }
 
@@ -419,13 +492,13 @@ Deno.serve(async (req) => {
             { name: 'Telegram OK', value: revokeResult.ok ? '✅' : '❌', inline: true },
           ]);
 
-          await sendTelegramMessage(commandBotToken, chatId, `✅ Enlace <code>${code}</code> revocado exitosamente.`);
+          await sendTelegramMessage(commandBotToken, chatId, `✅ Link <code>${code}</code> revoked successfully.`);
           break;
         }
 
         case '/stats': {
           if (!isAdmin) {
-            await sendTelegramMessage(commandBotToken, chatId, '❌ No tienes permisos para ver estadísticas.');
+            await sendTelegramMessage(commandBotToken, chatId, '❌ You don\'t have permission to view statistics.');
             break;
           }
 
@@ -449,10 +522,10 @@ Deno.serve(async (req) => {
             .from('invite_links')
             .select('id', { count: 'exact' });
 
-          const statsMsg = `📊 <b>Estadísticas</b>\n\n` +
-            `🟢 <b>Activos:</b> ${activeLinks?.length || 0}\n` +
-            `🔵 <b>Usados:</b> ${usedLinks?.length || 0}\n` +
-            `🔴 <b>Revocados:</b> ${revokedLinks?.length || 0}\n` +
+          const statsMsg = `📊 <b>Statistics</b>\n\n` +
+            `🟢 <b>Active:</b> ${activeLinks?.length || 0}\n` +
+            `🔵 <b>Used:</b> ${usedLinks?.length || 0}\n` +
+            `🔴 <b>Revoked:</b> ${revokedLinks?.length || 0}\n` +
             `📊 <b>Total:</b> ${totalLinks?.length || 0}`;
           
           await sendTelegramMessage(commandBotToken, chatId, statsMsg);
@@ -461,7 +534,7 @@ Deno.serve(async (req) => {
 
         default:
           if (isAdmin) {
-            await sendTelegramMessage(commandBotToken, chatId, '❓ Comando no reconocido. Usa /help para ver los comandos disponibles.');
+            await sendTelegramMessage(commandBotToken, chatId, '❓ Unknown command. Use /help to see available commands.');
           }
       }
 
