@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
-import { Link2, CheckCircle, Clock, XCircle, DollarSign, TrendingUp } from 'lucide-react';
+import { Link2, CheckCircle, Clock, XCircle, DollarSign, TrendingUp, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 import { format } from 'date-fns';
 
 interface Stats {
@@ -27,6 +30,26 @@ export default function Dashboard() {
   const [totalRevenue, setTotalRevenue] = useState<number>(0);
   const [recentRevenue, setRecentRevenue] = useState<RevenueEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetRevenue = async () => {
+    if (!codeUser?.accessCode) return;
+    setResetting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('data-api', {
+        body: { code: codeUser.accessCode, action: 'reset-all-revenue' }
+      });
+      if (error) throw error;
+      if (data?.success) {
+        setTotalRevenue(0);
+        setRecentRevenue([]);
+        toast.success('Revenue reset successfully');
+      }
+    } catch (err) {
+      toast.error('Failed to reset revenue');
+    }
+    setResetting(false);
+  };
 
   useEffect(() => {
     async function fetchStats() {
@@ -85,7 +108,30 @@ export default function Dashboard() {
           <CardTitle className="text-sm font-medium text-muted-foreground">
             Total Revenue
           </CardTitle>
-          <DollarSign className="w-5 h-5 text-success" />
+          <div className="flex items-center gap-2">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Reset Revenue">
+                  <RotateCcw className="w-4 h-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset All Revenue?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete all revenue records. This action cannot be undone. Links and users will not be affected.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleResetRevenue} disabled={resetting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    {resetting ? 'Resetting...' : 'Reset Revenue'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <DollarSign className="w-5 h-5 text-success" />
+          </div>
         </CardHeader>
         <CardContent>
           <div className="text-4xl font-bold text-success">
