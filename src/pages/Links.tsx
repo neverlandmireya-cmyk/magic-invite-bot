@@ -229,7 +229,7 @@ export default function Links() {
         body: { 
           adminCode: codeUser.accessCode,
           groupId: selectedGroup,
-          memberLimit: 1,
+          memberLimit: 2,
           accessCode: accessCode
         }
       });
@@ -319,7 +319,7 @@ export default function Links() {
         body: { 
           adminCode: codeUser.accessCode,
           groupId: selectedGroup,
-          memberLimit: 1,
+          memberLimit: 2,
           accessCode: accessCode // Pass code to be used as link name
         }
       });
@@ -563,7 +563,7 @@ export default function Links() {
         body: { 
           adminCode: codeUser.accessCode,
           groupId: link.group_id,
-          memberLimit: 1,
+          memberLimit: 2,
           accessCode: link.access_code
         }
       });

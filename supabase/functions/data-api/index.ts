@@ -495,6 +495,44 @@ Deno.serve(async (req) => {
         );
       }
 
+      // ============ RESET ALL REVENUE ============
+      case 'reset-all-revenue': {
+        if (!isAdmin) {
+          return new Response(
+            JSON.stringify({ error: "Admin access required" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { error } = await supabase
+          .from('revenue')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Log activity
+        await supabase.from('activity_logs').insert({
+          action: 'reset_all_revenue',
+          entity_type: 'revenue',
+          performed_by: accessCode,
+        });
+
+        await sendDiscordLog('warning', '💰 Revenue Reset', `All revenue records have been deleted`, [
+          { name: 'Performed By', value: accessCode, inline: true },
+        ]);
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       // ============ ACTIVITY LOGS ============
       case 'get-activity-logs': {
         // Admin sees all, reseller sees their own
