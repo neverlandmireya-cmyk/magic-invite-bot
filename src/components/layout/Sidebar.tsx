@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, Activity, Users } from "lucide-react";
+import logo from "@/assets/logo.png";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
@@ -38,9 +39,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <>
       <div className="p-6 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-            {isAdmin ? <Shield className="w-5 h-5 text-primary" /> : isReseller ? <Users className="w-5 h-5 text-primary" /> : <Key className="w-5 h-5 text-primary" />}
-          </div>
+          <img src={logo} alt="EXYLUS.NET" className="w-10 h-10 rounded-xl object-contain" />
           <div>
             <h1 className="font-semibold text-foreground">EXYLUS.NET</h1>
             <p className="text-xs text-muted-foreground">
@@ -106,9 +105,7 @@ export function Sidebar() {
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-sidebar border-b border-sidebar-border p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            {isReseller ? <Users className="w-4 h-4 text-primary" /> : <Shield className="w-4 h-4 text-primary" />}
-          </div>
+          <img src={logo} alt="EXYLUS.NET" className="w-8 h-8 rounded-lg object-contain" />
           <h1 className="font-semibold text-foreground">EXYLUS.NET</h1>
         </div>
         <Sheet open={open} onOpenChange={setOpen}>
