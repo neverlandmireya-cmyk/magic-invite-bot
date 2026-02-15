@@ -807,15 +807,9 @@ export default function Links() {
     // Get signed URL for existing receipt if present
     if (link.receipt_url && codeUser?.accessCode) {
       try {
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/receipt-storage?action=get-signed-url`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filePath: link.receipt_url, adminCode: codeUser.accessCode }),
-          }
-        );
-        const result = await response.json();
+        const { data: result } = await supabase.functions.invoke('receipt-storage', {
+          body: { filePath: link.receipt_url, adminCode: codeUser.accessCode, action: 'get-signed-url' },
+        });
         if (result.success && result.url) {
           setReceiptPreview(result.url);
         } else {
@@ -851,15 +845,9 @@ export default function Links() {
     // Reload signed URL for existing receipt
     if (editClientTarget?.receipt_url && codeUser?.accessCode) {
       try {
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/receipt-storage?action=get-signed-url`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filePath: editClientTarget.receipt_url, adminCode: codeUser.accessCode }),
-          }
-        );
-        const result = await response.json();
+        const { data: result } = await supabase.functions.invoke('receipt-storage', {
+          body: { filePath: editClientTarget.receipt_url, adminCode: codeUser.accessCode, action: 'get-signed-url' },
+        });
         if (result.success && result.url) {
           setReceiptPreview(result.url);
         } else {
@@ -890,18 +878,15 @@ export default function Links() {
         formData.append('linkId', editClientTarget.id);
         formData.append('adminCode', codeUser.accessCode);
         
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/receipt-storage?action=upload`,
-          {
-            method: 'POST',
-            body: formData,
-          }
-        );
+        const { data: result, error: uploadError } = await supabase.functions.invoke('receipt-storage', {
+          body: formData,
+          headers: {},
+        });
         
-        const result = await response.json();
+        if (uploadError) throw uploadError;
         
-        if (!result.success) {
-          throw new Error(result.error || 'Upload failed');
+        if (!result?.success) {
+          throw new Error(result?.error || 'Upload failed');
         }
 
         // Store the filename for future signed URL generation

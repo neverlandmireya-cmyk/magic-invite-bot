@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
 Deno.serve(async (req) => {
@@ -18,7 +18,24 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
     const url = new URL(req.url);
-    const action = url.searchParams.get('action');
+    let action = url.searchParams.get('action');
+
+    // If no action in query params, determine from content type
+    const contentType = req.headers.get('content-type') || '';
+    if (!action) {
+      if (contentType.includes('multipart/form-data')) {
+        action = 'upload';
+      } else if (contentType.includes('application/json')) {
+        // Clone request to peek at action without consuming body
+        const clonedReq = req.clone();
+        try {
+          const bodyJson = await clonedReq.json();
+          if (bodyJson.action) {
+            action = bodyJson.action;
+          }
+        } catch { /* ignore */ }
+      }
+    }
 
     console.log(`Receipt storage action: ${action}`);
 
