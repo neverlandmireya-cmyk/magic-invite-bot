@@ -507,7 +507,7 @@ Deno.serve(async (req) => {
         const { error } = await supabase
           .from('revenue')
           .delete()
-          .gte('created_at', '1970-01-01T00:00:00.000Z'); // Delete all rows
+          .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
 
         if (error) {
           return new Response(
