@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "net.exylus.login.twa",
+        "sha256_cert_fingerprints": ["9B:FF:69:70:36:24:9E:0B:56:69:3E:57:9E:13:93:26:21:BD:F9:79:0E:A2:0C:60:00:C5:0F:F0:BC:9E:22:89"]
+      }
+    }]
