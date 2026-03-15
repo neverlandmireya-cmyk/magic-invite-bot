@@ -4,25 +4,42 @@ import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Save, Eye, EyeOff, AlertCircle, CheckCircle2, Bell, Bot } from 'lucide-react';
+import { Save, Eye, EyeOff, AlertCircle, CheckCircle2, Bell, Bot, Plus, Trash2 } from 'lucide-react';
+
+interface GroupEntry {
+  id: string;
+  name: string;
+}
+
+function parseGroups(raw: string): GroupEntry[] {
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map((g: any) => ({ id: g.id || '', name: g.name || '' }));
+    }
+  } catch {}
+  return [{ id: '', name: '' }];
+}
+
+function serializeGroups(groups: GroupEntry[]): string {
+  const valid = groups.filter(g => g.id.trim());
+  if (valid.length === 0) return '';
+  return JSON.stringify(valid.map(g => ({ id: g.id.trim(), name: g.name.trim() })));
+}
 
 export default function Settings() {
   const { codeUser } = useAuth();
-  // Command bot (for /generate, /status, etc.)
   const [commandBotToken, setCommandBotToken] = useState('');
   const [commandBotTokenMasked, setCommandBotTokenMasked] = useState('');
   const [commandBotTokenSet, setCommandBotTokenSet] = useState(false);
   const [showCommandToken, setShowCommandToken] = useState(false);
-  // Link bot (for generating invite links)
   const [linkBotToken, setLinkBotToken] = useState('');
   const [linkBotTokenMasked, setLinkBotTokenMasked] = useState('');
   const [linkBotTokenSet, setLinkBotTokenSet] = useState(false);
   const [showLinkToken, setShowLinkToken] = useState(false);
-  // Other settings
-  const [groupIds, setGroupIds] = useState('');
+  const [groups, setGroups] = useState<GroupEntry[]>([{ id: '', name: '' }]);
   const [notificationGroupId, setNotificationGroupId] = useState('');
   const [telegramAdminIds, setTelegramAdminIds] = useState('');
   const [saving, setSaving] = useState(false);
@@ -40,27 +57,21 @@ export default function Settings() {
 
     try {
       const { data, error } = await supabase.functions.invoke('manage-settings', {
-        body: { 
-          action: 'get',
-          adminCode: codeUser.accessCode
-        }
+        body: { action: 'get', adminCode: codeUser.accessCode }
       });
 
       if (error) throw error;
 
       if (data?.success && data.settings) {
-        // Command bot (webhook)
         setCommandBotTokenSet(data.settings.command_bot_token_set === 'true');
         setCommandBotTokenMasked(data.settings.command_bot_token_masked || '');
-        // Link bot (generates invites)
         setLinkBotTokenSet(data.settings.link_bot_token_set === 'true');
         setLinkBotTokenMasked(data.settings.link_bot_token_masked || '');
-        // Legacy fallback: if old bot_token exists, show it as link bot
         if (!data.settings.link_bot_token_set && data.settings.bot_token_set === 'true') {
           setLinkBotTokenSet(true);
           setLinkBotTokenMasked(data.settings.bot_token_masked || '');
         }
-        setGroupIds(data.settings.group_ids || '');
+        setGroups(parseGroups(data.settings.group_ids || ''));
         setNotificationGroupId(data.settings.notification_group_id || '');
         setTelegramAdminIds(data.settings.telegram_admin_ids || '');
       }
@@ -82,12 +93,12 @@ export default function Settings() {
 
     try {
       const { data, error } = await supabase.functions.invoke('manage-settings', {
-        body: { 
+        body: {
           action: 'save',
           adminCode: codeUser.accessCode,
           commandBotToken: commandBotToken.trim() || undefined,
           linkBotToken: linkBotToken.trim() || undefined,
-          groupIds: groupIds,
+          groupIds: serializeGroups(groups),
           notificationGroupId: notificationGroupId.trim(),
           telegramAdminIds: telegramAdminIds.trim()
         }
@@ -108,6 +119,21 @@ export default function Settings() {
     }
 
     setSaving(false);
+  };
+
+  const addGroup = () => {
+    setGroups([...groups, { id: '', name: '' }]);
+  };
+
+  const removeGroup = (index: number) => {
+    if (groups.length <= 1) return;
+    setGroups(groups.filter((_, i) => i !== index));
+  };
+
+  const updateGroup = (index: number, field: 'id' | 'name', value: string) => {
+    const updated = [...groups];
+    updated[index] = { ...updated[index], [field]: value };
+    setGroups(updated);
   };
 
   if (loading) {
@@ -195,18 +221,50 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="groups">Group/Channel IDs</Label>
-            <Textarea
-              id="groups"
-              placeholder='[{"id":"-1001234567890","name":"Group Name"}]'
-              value={groupIds}
-              onChange={(e) => setGroupIds(e.target.value)}
-              className="bg-input font-mono text-sm min-h-[120px]"
-            />
+          {/* Groups - Easy UI */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>📢 Groups / Channels</Label>
+              <Button type="button" variant="outline" size="sm" onClick={addGroup} className="gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                Add Group
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
-              JSON array format: {`[{"id":"-100xxx","name":"Name"}]`}. Use @userinfobot to get IDs.
+              Add each group or channel. Use <code className="bg-muted px-1 rounded">@userinfobot</code> in Telegram to get the Chat ID (starts with <code className="bg-muted px-1 rounded">-100</code>).
             </p>
+            
+            <div className="space-y-3">
+              {groups.map((group, index) => (
+                <div key={index} className="flex gap-2 items-start p-3 rounded-lg border border-border/50 bg-muted/30">
+                  <div className="flex-1 space-y-2">
+                    <Input
+                      placeholder="-1001234567890"
+                      value={group.id}
+                      onChange={(e) => updateGroup(index, 'id', e.target.value)}
+                      className="bg-input font-mono text-sm"
+                    />
+                    <Input
+                      placeholder="Group name (e.g. VIP Premium)"
+                      value={group.name}
+                      onChange={(e) => updateGroup(index, 'name', e.target.value)}
+                      className="bg-input text-sm"
+                    />
+                  </div>
+                  {groups.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeGroup(index)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 mt-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 flex gap-3">
