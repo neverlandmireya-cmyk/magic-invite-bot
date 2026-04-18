@@ -123,6 +123,40 @@ export default function Links() {
     loadData();
   }, [codeUser]);
 
+  // Debounced fugitive match check while editing client info
+  useEffect(() => {
+    if (!editClientTarget || !codeUser?.accessCode) {
+      setFugitiveMatches([]);
+      return;
+    }
+    const email = clientEmail.trim();
+    const cid = clientId.trim();
+    if (!email && !cid) {
+      setFugitiveMatches([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const { data } = await supabase.functions.invoke('data-api', {
+          body: {
+            code: codeUser.accessCode,
+            action: 'check-fugitive-match',
+            data: { email: email || undefined, clientId: cid || undefined },
+          },
+        });
+        if (data?.success) {
+          const filtered = (data.matches || []).filter(
+            (m: { id: string }) => m.id !== editClientTarget.id,
+          );
+          setFugitiveMatches(filtered);
+        }
+      } catch (e) {
+        console.error('Fugitive check failed:', e);
+      }
+    }, 450);
+    return () => clearTimeout(handle);
+  }, [editClientTarget, clientEmail, clientId, codeUser?.accessCode]);
+
   async function loadData() {
     if (!codeUser?.accessCode) {
       setLoading(false);
