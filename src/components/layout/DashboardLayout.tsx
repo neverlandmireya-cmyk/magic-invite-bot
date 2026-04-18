@@ -21,7 +21,7 @@ export function DashboardLayout() {
   }
 
   // Define allowed paths based on user role
-  const resellerAllowedPaths = ['/reseller', '/links', '/activity', '/support'];
+  const resellerAllowedPaths = ['/reseller', '/links', '/activity', '/support', '/depuracion', '/flags'];
   const userAllowedPaths = ['/links', '/support'];
 
   // Reseller trying to access paths they shouldn't
