@@ -222,14 +222,27 @@ export default function ClearHistory() {
                 <ul className="space-y-2">
                   {history.map(h => {
                     const flag = (h.details?.flag as Flag) || "clean";
+                    const name = h.performer_name || h.details?.performer_name;
+                    const role = h.performer_role || h.details?.performer_role;
                     return (
-                      <li key={h.id} className="flex items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2 min-w-0">
+                      <li key={h.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs border-b border-border/40 last:border-0 pb-2 last:pb-0">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
                           <Badge variant="outline" className={flagClass[flag]}>
                             {flagLabel[flag]}
                           </Badge>
-                          <span className="text-muted-foreground truncate">
-                            by <span className="font-mono">{h.performed_by}</span>
+                          <span className="text-muted-foreground">
+                            by{" "}
+                            {name ? (
+                              <>
+                                <span className="font-medium text-foreground">{name}</span>{" "}
+                                <span className="font-mono text-[10px] opacity-70">({h.performed_by})</span>
+                              </>
+                            ) : (
+                              <span className="font-mono">{h.performed_by}</span>
+                            )}
+                            {role && (
+                              <span className="ml-1 text-[10px] uppercase opacity-60">· {role}</span>
+                            )}
                           </span>
                         </div>
                         <span className="text-muted-foreground shrink-0">
