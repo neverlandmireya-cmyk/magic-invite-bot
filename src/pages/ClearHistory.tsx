@@ -234,14 +234,9 @@ export default function ClearHistory() {
                             </Badge>
                             <span className="text-muted-foreground">
                               by{" "}
-                              {name ? (
-                                <>
-                                  <span className="font-medium text-foreground">{name}</span>{" "}
-                                  <span className="font-mono text-[10px] opacity-70">({h.performed_by})</span>
-                                </>
-                              ) : (
-                                <span className="font-mono">{h.performed_by}</span>
-                              )}
+                              <span className="font-medium text-foreground">
+                                {name || "Unknown"}
+                              </span>
                               {role && (
                                 <span className="ml-1 text-[10px] uppercase opacity-60">· {role}</span>
                               )}
