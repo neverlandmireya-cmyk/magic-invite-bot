@@ -36,7 +36,7 @@ interface FlagHistoryEntry {
   id: string;
   performed_by: string;
   created_at: string;
-  details: { flag?: string; performer_name?: string; performer_role?: string } | null;
+  details: { flag?: string; performer_name?: string; performer_role?: string; note?: string } | null;
   performer_name?: string | null;
   performer_role?: string | null;
 }
