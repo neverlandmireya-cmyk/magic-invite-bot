@@ -10,7 +10,8 @@ import { useState } from "react";
 const adminNavItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/links", label: "Invite Links", icon: Link2 },
-  { path: "/depuracion", label: "Client Tracking", icon: ShieldAlert },
+  { path: "/depuracion", label: "Client Lookup", icon: ShieldAlert },
+  { path: "/flags", label: "Flag Management", icon: Flag },
   { path: "/activity", label: "Activity Logs", icon: Activity },
   { path: "/resellers", label: "Resellers", icon: Users },
   { path: "/admin-codes", label: "Admin Access", icon: UserCog },
