@@ -84,19 +84,31 @@ export default function FlagManagement() {
 
   const setFlag = async (flag: Flag) => {
     if (!codeUser || !client) return;
+    if (isAdmin && !performerName.trim()) {
+      toast({
+        title: "Name required",
+        description: "Please write the name of who is setting this flag.",
+        variant: "destructive",
+      });
+      return;
+    }
     setUpdating(true);
     try {
       const { data, error } = await supabase.functions.invoke("data-api", {
         body: {
           code: codeUser.accessCode,
           action: "update-client-flag",
-          data: { id: client.id, flag, note: note.trim() || null },
+          data: {
+            id: client.id,
+            flag,
+            performer_name: isAdmin ? performerName.trim() : null,
+          },
         },
       });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || "Update failed");
       setClient({ ...client, status_flag: flag });
-      setNote("");
+      if (isAdmin) setPerformerName("");
       toast({ title: "Status updated", description: `Marked as ${flagLabel[flag]}` });
     } catch (err) {
       toast({
