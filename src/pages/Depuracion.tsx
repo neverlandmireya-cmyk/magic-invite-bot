@@ -131,48 +131,7 @@ export default function Depuracion() {
     [codeUser, historyMap],
   );
 
-  const handleClearHistory = useCallback(
-    async (row: ClientRow, doResetFlag: boolean) => {
-      if (!codeUser) return;
-      setClearing(true);
-      try {
-        const { data, error } = await supabase.functions.invoke("data-api", {
-          body: {
-            code: codeUser.accessCode,
-            action: "clear-client-flag-history",
-            data: { id: row.id, resetFlag: doResetFlag },
-          },
-        });
-        const payload = (data ?? (error as { context?: { error?: string } })?.context) as
-          | { success?: boolean; resetFlag?: boolean; error?: string }
-          | undefined;
-        if (!payload?.success) throw new Error(payload?.error || "Failed to clear history");
-        toast({
-          title: "History cleared",
-          description: `Flag history wiped for ${row.access_code}${
-            payload.resetFlag ? " and reset to Clean." : "."
-          }`,
-        });
-        // Refresh history view + flag in row
-        setHistoryMap(prev => ({ ...prev, [row.id]: [] }));
-        if (payload.resetFlag) {
-          setRows(prev =>
-            prev.map(r => (r.id === row.id ? { ...r, status_flag: "clean" } : r)),
-          );
-        }
-        setClearTarget(null);
-      } catch (err) {
-        toast({
-          title: "Error",
-          description: err instanceof Error ? err.message : "Could not clear history",
-          variant: "destructive",
-        });
-      } finally {
-        setClearing(false);
-      }
-    },
-    [codeUser],
-  );
+
 
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-5xl mx-auto">
