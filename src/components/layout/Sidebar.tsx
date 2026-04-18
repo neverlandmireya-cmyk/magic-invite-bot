@@ -10,7 +10,7 @@ import { useState } from "react";
 const adminNavItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/links", label: "Invite Links", icon: Link2 },
-  { path: "/depuracion", label: "Depuración", icon: ShieldAlert },
+  { path: "/depuracion", label: "Client Tracking", icon: ShieldAlert },
   { path: "/activity", label: "Activity Logs", icon: Activity },
   { path: "/resellers", label: "Resellers", icon: Users },
   { path: "/admin-codes", label: "Admin Access", icon: UserCog },
@@ -21,7 +21,7 @@ const adminNavItems = [
 const resellerNavItems = [
   { path: "/reseller", label: "Dashboard", icon: LayoutDashboard },
   { path: "/links", label: "Invite Links", icon: Link2 },
-  { path: "/depuracion", label: "Depuración", icon: ShieldAlert },
+  { path: "/depuracion", label: "Client Tracking", icon: ShieldAlert },
   { path: "/activity", label: "Activity Logs", icon: Activity },
   { path: "/support", label: "Ticket", icon: HelpCircle },
 ];
