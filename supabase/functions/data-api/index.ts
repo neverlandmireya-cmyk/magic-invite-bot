@@ -1317,7 +1317,7 @@ Deno.serve(async (req) => {
 
         let q = supabase
           .from('invite_links')
-          .select('id, access_code, client_id, client_email, group_name, status, status_flag, reseller_code, created_at, note')
+          .select('id, access_code, client_id, client_email, group_name, status, status_flag, reseller_code, created_at, note, receipt_url')
           .order('created_at', { ascending: false })
           .limit(200);
 
@@ -1344,8 +1344,20 @@ Deno.serve(async (req) => {
           );
         }
 
+        // Generate signed URLs for receipt photos (1 hour)
+        const enriched = await Promise.all((rows || []).map(async (row) => {
+          let receipt_signed_url: string | null = null;
+          if (row.receipt_url) {
+            const { data: signed } = await supabase.storage
+              .from('receipts')
+              .createSignedUrl(row.receipt_url, 60 * 60);
+            receipt_signed_url = signed?.signedUrl || null;
+          }
+          return { ...row, receipt_signed_url };
+        }));
+
         return new Response(
-          JSON.stringify({ success: true, data: rows || [] }),
+          JSON.stringify({ success: true, data: enriched }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
