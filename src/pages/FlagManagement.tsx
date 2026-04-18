@@ -51,9 +51,17 @@ export default function FlagManagement() {
           data: { query: code.trim() },
         },
       });
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || "Search failed");
-      const rows: ClientRow[] = data.data || [];
+      const payload = (data ?? (error as { context?: { error?: string } })?.context) as
+        | { success?: boolean; data?: ClientRow[]; error?: string }
+        | undefined;
+      if (error && !payload?.error) throw error;
+      if (!payload?.success) {
+        throw new Error(
+          payload?.error ||
+            "Search failed. Make sure you are signed in as an admin or reseller.",
+        );
+      }
+      const rows: ClientRow[] = payload.data || [];
       const match =
         rows.find(r => r.access_code?.toLowerCase() === code.trim().toLowerCase()) || rows[0];
       if (!match) {
