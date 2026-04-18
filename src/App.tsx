@@ -15,6 +15,7 @@ import ActivityLogs from "./pages/ActivityLogs";
 import Resellers from "./pages/Resellers";
 import ResellerDashboard from "./pages/ResellerDashboard";
 import Depuracion from "./pages/Depuracion";
+import Eliminar from "./pages/Eliminar";
 import FlagManagement from "./pages/FlagManagement";
 import NotFound from "./pages/NotFound";
 
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/resellers" element={<Resellers />} />
               <Route path="/reseller" element={<ResellerDashboard />} />
               <Route path="/depuracion" element={<Depuracion />} />
+              <Route path="/eliminar" element={<Eliminar />} />
               <Route path="/flags" element={<FlagManagement />} />
             </Route>
             <Route path="*" element={<NotFound />} />
