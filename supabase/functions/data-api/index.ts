@@ -1304,6 +1304,113 @@ Deno.serve(async (req) => {
         );
       }
 
+      // ============ SEARCH CLIENTS (depuracion) ============
+      case 'search-clients': {
+        if (!isAdmin && !isReseller) {
+          return new Response(
+            JSON.stringify({ error: "Access denied" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { query: searchQuery, flag } = (data || {}) as { query?: string; flag?: string };
+
+        let q = supabase
+          .from('invite_links')
+          .select('id, access_code, client_id, client_email, group_name, status, status_flag, reseller_code, created_at, note')
+          .order('created_at', { ascending: false })
+          .limit(200);
+
+        // Resellers only see their own clients
+        if (isReseller) {
+          q = q.eq('reseller_code', accessCode);
+        }
+
+        if (searchQuery && searchQuery.trim()) {
+          const term = searchQuery.trim();
+          q = q.or(`access_code.ilike.%${term}%,client_id.ilike.%${term}%,client_email.ilike.%${term}%`);
+        }
+
+        if (flag && ['clean', 'pending', 'fugitive'].includes(flag)) {
+          q = q.eq('status_flag', flag);
+        }
+
+        const { data: rows, error } = await q;
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, data: rows || [] }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // ============ UPDATE CLIENT FLAG ============
+      case 'update-client-flag': {
+        if (!isAdmin && !isReseller) {
+          return new Response(
+            JSON.stringify({ error: "Access denied" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { id, flag } = (data || {}) as { id?: string; flag?: string };
+
+        if (!id || !flag || !['clean', 'pending', 'fugitive'].includes(flag)) {
+          return new Response(
+            JSON.stringify({ error: "Invalid id or flag" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Resellers can only update their own clients
+        if (isReseller) {
+          const { data: link } = await supabase
+            .from('invite_links')
+            .select('reseller_code')
+            .eq('id', id)
+            .maybeSingle();
+          if (!link || link.reseller_code !== accessCode) {
+            return new Response(
+              JSON.stringify({ error: "You can only update your own clients" }),
+              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        const { error } = await supabase
+          .from('invite_links')
+          .update({ status_flag: flag })
+          .eq('id', id);
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Log to activity
+        await supabase.from('activity_logs').insert({
+          entity_type: 'client_flag',
+          entity_id: id,
+          action: `flag_set_${flag}`,
+          performed_by: accessCode,
+          reseller_code: isReseller ? accessCode : null,
+          details: { flag },
+        });
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: "Unknown action" }),
