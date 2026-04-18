@@ -1442,6 +1442,202 @@ Deno.serve(async (req) => {
         );
       }
 
+      // ============ GET CLIENT FLAG HISTORY ============
+      case 'get-client-flag-history': {
+        if (!isAdmin && !isReseller) {
+          return new Response(
+            JSON.stringify({ error: "Access denied" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { id } = (data || {}) as { id?: string };
+        if (!id) {
+          return new Response(
+            JSON.stringify({ error: "id required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Resellers can only see their own
+        if (isReseller) {
+          const { data: link } = await supabase
+            .from('invite_links')
+            .select('reseller_code')
+            .eq('id', id)
+            .maybeSingle();
+          if (!link || link.reseller_code !== accessCode) {
+            return new Response(
+              JSON.stringify({ error: "Access denied" }),
+              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        }
+
+        const { data: history, error } = await supabase
+          .from('activity_logs')
+          .select('id, action, performed_by, created_at, details')
+          .eq('entity_type', 'client_flag')
+          .eq('entity_id', id)
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, data: history || [] }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // ============ DELETE CLIENT BY ACCESS CODE (manual) ============
+      case 'delete-client-by-code': {
+        if (!isAdmin && !isReseller) {
+          return new Response(
+            JSON.stringify({ error: "Access denied" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { targetCode } = (data || {}) as { targetCode?: string };
+        if (!targetCode || !targetCode.trim()) {
+          return new Response(
+            JSON.stringify({ error: "targetCode required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const codeUpper = targetCode.trim().toUpperCase();
+
+        // Find the link
+        const { data: link } = await supabase
+          .from('invite_links')
+          .select('id, access_code, group_id, group_name, invite_link, reseller_code')
+          .eq('access_code', codeUpper)
+          .maybeSingle();
+
+        if (!link) {
+          return new Response(
+            JSON.stringify({ error: "Client not found" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Resellers may only delete their own
+        if (isReseller && link.reseller_code !== accessCode) {
+          return new Response(
+            JSON.stringify({ error: "You can only delete your own clients" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Revoke on Telegram (best-effort)
+        if (link.group_id && link.invite_link) {
+          try {
+            const { data: settingsRow } = await supabase
+              .from('settings')
+              .select('value')
+              .eq('key', 'bot_token')
+              .maybeSingle();
+            const botToken = settingsRow?.value;
+            if (botToken) {
+              await fetch(`https://api.telegram.org/bot${botToken}/revokeChatInviteLink`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: link.group_id, invite_link: link.invite_link }),
+              });
+            }
+          } catch (e) {
+            console.error('Telegram revoke failed (non-fatal):', e);
+          }
+        }
+
+        // Delete revenue
+        await supabase.from('revenue').delete().eq('access_code', codeUpper);
+
+        // Delete the link
+        const { error: delErr } = await supabase
+          .from('invite_links')
+          .delete()
+          .eq('id', link.id);
+
+        if (delErr) {
+          return new Response(
+            JSON.stringify({ error: delErr.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        await supabase.from('activity_logs').insert({
+          entity_type: 'invite_link',
+          entity_id: link.id,
+          action: 'delete_client_manual',
+          performed_by: accessCode,
+          reseller_code: isReseller ? accessCode : null,
+          details: { access_code: codeUpper, group_name: link.group_name },
+        });
+
+        await sendDiscordLog('ban', '🗑️ Client Deleted (manual)', `Code **${codeUpper}** was manually deleted`, [
+          { name: 'Group', value: link.group_name || 'Unknown', inline: true },
+          { name: 'Deleted By', value: accessCode, inline: true },
+        ]);
+
+        return new Response(
+          JSON.stringify({ success: true, deleted: { access_code: codeUpper, group_name: link.group_name } }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // ============ CHECK FUGITIVE MATCH (pre-create alert) ============
+      case 'check-fugitive-match': {
+        if (!isAdmin && !isReseller) {
+          return new Response(
+            JSON.stringify({ error: "Access denied" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { email, clientId, accessCode: queryCode } = (data || {}) as {
+          email?: string; clientId?: string; accessCode?: string;
+        };
+
+        const filters: string[] = [];
+        if (email && email.trim()) filters.push(`client_email.ilike.${email.trim()}`);
+        if (clientId && clientId.trim()) filters.push(`client_id.ilike.${clientId.trim()}`);
+        if (queryCode && queryCode.trim()) filters.push(`access_code.eq.${queryCode.trim().toUpperCase()}`);
+
+        if (filters.length === 0) {
+          return new Response(
+            JSON.stringify({ success: true, matches: [] }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { data: matches, error } = await supabase
+          .from('invite_links')
+          .select('id, access_code, client_email, client_id, group_name, status_flag, created_at')
+          .eq('status_flag', 'fugitive')
+          .or(filters.join(','))
+          .limit(5);
+
+        if (error) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, matches: matches || [] }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: "Unknown action" }),

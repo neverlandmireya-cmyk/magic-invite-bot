@@ -111,11 +111,51 @@ export default function Links() {
   const [savingClientInfo, setSavingClientInfo] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
+  // Fugitive match warning (shown inside Edit Client dialog while typing)
+  const [fugitiveMatches, setFugitiveMatches] = useState<Array<{
+    id: string; access_code: string; client_email: string | null;
+    client_id: string | null; group_name: string | null;
+  }>>([]);
+
   const dashboardUrl = 'https://login.exylus.net';
 
   useEffect(() => {
     loadData();
   }, [codeUser]);
+
+  // Debounced fugitive match check while editing client info
+  useEffect(() => {
+    if (!editClientTarget || !codeUser?.accessCode) {
+      setFugitiveMatches([]);
+      return;
+    }
+    const email = clientEmail.trim();
+    const cid = clientId.trim();
+    if (!email && !cid) {
+      setFugitiveMatches([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const { data } = await supabase.functions.invoke('data-api', {
+          body: {
+            code: codeUser.accessCode,
+            action: 'check-fugitive-match',
+            data: { email: email || undefined, clientId: cid || undefined },
+          },
+        });
+        if (data?.success) {
+          const filtered = (data.matches || []).filter(
+            (m: { id: string }) => m.id !== editClientTarget.id,
+          );
+          setFugitiveMatches(filtered);
+        }
+      } catch (e) {
+        console.error('Fugitive check failed:', e);
+      }
+    }, 450);
+    return () => clearTimeout(handle);
+  }, [editClientTarget, clientEmail, clientId, codeUser?.accessCode]);
 
   async function loadData() {
     if (!codeUser?.accessCode) {
@@ -1782,7 +1822,28 @@ export default function Links() {
                 <span className="font-mono text-sm ml-2 text-foreground">{editClientTarget.access_code}</span>
               </div>
             )}
-            
+
+            {fugitiveMatches.length > 0 && (
+              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
+                <div className="flex items-center gap-2 font-semibold text-destructive">
+                  <AlertCircle className="w-4 h-4" />
+                  Fugitive match
+                </div>
+                <p className="text-xs text-destructive/90 mt-1">
+                  These email/ID values match {fugitiveMatches.length} existing client
+                  {fugitiveMatches.length > 1 ? 's' : ''} flagged as fugitive:
+                </p>
+                <ul className="mt-2 space-y-1 text-xs">
+                  {fugitiveMatches.slice(0, 3).map(m => (
+                    <li key={m.id} className="font-mono text-destructive">
+                      {m.access_code}
+                      {m.group_name ? ` · ${m.group_name}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground flex items-center gap-2">
                 <Mail className="w-4 h-4 text-muted-foreground" />
