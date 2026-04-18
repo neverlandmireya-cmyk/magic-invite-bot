@@ -1495,8 +1495,8 @@ Deno.serve(async (req) => {
         );
       }
 
-      // ============ DELETE CLIENT BY ACCESS CODE (manual) ============
-      case 'delete-client-by-code': {
+      // ============ CLEAR CLIENT FLAG HISTORY (antecedentes) ============
+      case 'clear-client-flag-history': {
         if (!isAdmin && !isReseller) {
           return new Response(
             JSON.stringify({ error: "Access denied" }),
@@ -1504,21 +1504,19 @@ Deno.serve(async (req) => {
           );
         }
 
-        const { targetCode } = (data || {}) as { targetCode?: string };
-        if (!targetCode || !targetCode.trim()) {
+        const { id, resetFlag } = (data || {}) as { id?: string; resetFlag?: boolean };
+        if (!id) {
           return new Response(
-            JSON.stringify({ error: "targetCode required" }),
+            JSON.stringify({ error: "id required" }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
-        const codeUpper = targetCode.trim().toUpperCase();
-
-        // Find the link
+        // Resellers may only clear their own clients
         const { data: link } = await supabase
           .from('invite_links')
-          .select('id, access_code, group_id, group_name, invite_link, reseller_code')
-          .eq('access_code', codeUpper)
+          .select('id, access_code, reseller_code, status_flag, group_name')
+          .eq('id', id)
           .maybeSingle();
 
         if (!link) {
@@ -1528,43 +1526,19 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Resellers may only delete their own
         if (isReseller && link.reseller_code !== accessCode) {
           return new Response(
-            JSON.stringify({ error: "You can only delete your own clients" }),
+            JSON.stringify({ error: "You can only clear your own clients" }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
-        // Revoke on Telegram (best-effort)
-        if (link.group_id && link.invite_link) {
-          try {
-            const { data: settingsRow } = await supabase
-              .from('settings')
-              .select('value')
-              .eq('key', 'bot_token')
-              .maybeSingle();
-            const botToken = settingsRow?.value;
-            if (botToken) {
-              await fetch(`https://api.telegram.org/bot${botToken}/revokeChatInviteLink`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: link.group_id, invite_link: link.invite_link }),
-              });
-            }
-          } catch (e) {
-            console.error('Telegram revoke failed (non-fatal):', e);
-          }
-        }
-
-        // Delete revenue
-        await supabase.from('revenue').delete().eq('access_code', codeUpper);
-
-        // Delete the link
+        // Delete all flag history for this client
         const { error: delErr } = await supabase
-          .from('invite_links')
+          .from('activity_logs')
           .delete()
-          .eq('id', link.id);
+          .eq('entity_type', 'client_flag')
+          .eq('entity_id', id);
 
         if (delErr) {
           return new Response(
@@ -1573,22 +1547,36 @@ Deno.serve(async (req) => {
           );
         }
 
+        // Optionally reset current flag to clean
+        if (resetFlag) {
+          await supabase
+            .from('invite_links')
+            .update({ status_flag: 'clean' })
+            .eq('id', id);
+        }
+
+        // Audit (under a different entity_type so it doesn't pollute flag history)
         await supabase.from('activity_logs').insert({
           entity_type: 'invite_link',
-          entity_id: link.id,
-          action: 'delete_client_manual',
+          entity_id: id,
+          action: 'clear_flag_history',
           performed_by: accessCode,
           reseller_code: isReseller ? accessCode : null,
-          details: { access_code: codeUpper, group_name: link.group_name },
+          details: {
+            access_code: link.access_code,
+            previous_flag: link.status_flag,
+            reset_to_clean: !!resetFlag,
+          },
         });
 
-        await sendDiscordLog('ban', '🗑️ Client Deleted (manual)', `Code **${codeUpper}** was manually deleted`, [
+        await sendDiscordLog('warning', '🧹 Flag history cleared', `History wiped for **${link.access_code}**`, [
           { name: 'Group', value: link.group_name || 'Unknown', inline: true },
-          { name: 'Deleted By', value: accessCode, inline: true },
+          { name: 'Cleared By', value: accessCode, inline: true },
+          { name: 'Reset to clean', value: resetFlag ? 'Yes' : 'No', inline: true },
         ]);
 
         return new Response(
-          JSON.stringify({ success: true, deleted: { access_code: codeUpper, group_name: link.group_name } }),
+          JSON.stringify({ success: true, resetFlag: !!resetFlag }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
