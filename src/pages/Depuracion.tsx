@@ -270,7 +270,6 @@ export default function Depuracion() {
                         </ul>
                       )}
                     </div>
-
                   </CollapsibleContent>
                 </Collapsible>
               </CardContent>
@@ -278,48 +277,6 @@ export default function Depuracion() {
           );
         })}
       </div>
-
-      {/* Confirm: clear flag history */}
-      <AlertDialog
-        open={!!clearTarget}
-        onOpenChange={o => !o && setClearTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Clear flag history for {clearTarget?.access_code}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes all recorded flag changes (antecedentes) for this client. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
-            <Checkbox
-              id="reset-flag"
-              checked={resetFlag}
-              onCheckedChange={v => setResetFlag(v === true)}
-            />
-            <label htmlFor="reset-flag" className="text-sm leading-tight cursor-pointer">
-              Also reset current flag to <strong>Clean</strong>
-              <span className="block text-xs text-muted-foreground mt-0.5">
-                Currently: {clearTarget ? flagLabel[clearTarget.status_flag] : ""}
-              </span>
-            </label>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={clearing}
-              onClick={() => clearTarget && handleClearHistory(clearTarget, resetFlag)}
-            >
-              {clearing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Clear history"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
