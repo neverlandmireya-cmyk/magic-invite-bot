@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
@@ -21,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
-import { ChevronDown, History, Trash2, Loader2 } from "lucide-react";
+import { ChevronDown, History, Loader2, Eraser } from "lucide-react";
 
 type Flag = "clean" | "pending" | "fugitive";
 
@@ -65,16 +66,13 @@ export default function Depuracion() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  // Manual delete by code
-  const [deleteCode, setDeleteCode] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [confirmDeleteCode, setConfirmDeleteCode] = useState<string | null>(null);
-
-  // In-card delete confirmation
-  const [confirmDeleteRow, setConfirmDeleteRow] = useState<ClientRow | null>(null);
-
   // History per row
   const [historyMap, setHistoryMap] = useState<Record<string, FlagHistoryEntry[] | "loading">>({});
+
+  // Clear-history confirmation
+  const [clearTarget, setClearTarget] = useState<ClientRow | null>(null);
+  const [resetFlag, setResetFlag] = useState(true);
+  const [clearing, setClearing] = useState(false);
 
   const fetchClients = useCallback(async () => {
     if (!codeUser) return;
@@ -116,9 +114,9 @@ export default function Depuracion() {
   };
 
   const loadHistory = useCallback(
-    async (rowId: string) => {
+    async (rowId: string, force = false) => {
       if (!codeUser) return;
-      if (historyMap[rowId] && historyMap[rowId] !== "loading") return; // cached
+      if (!force && historyMap[rowId] && historyMap[rowId] !== "loading") return;
       setHistoryMap(prev => ({ ...prev, [rowId]: "loading" }));
       try {
         const { data, error } = await supabase.functions.invoke("data-api", {
@@ -149,39 +147,44 @@ export default function Depuracion() {
     [codeUser, historyMap],
   );
 
-  const handleDeleteByCode = useCallback(
-    async (codeToDelete: string) => {
-      if (!codeUser || !codeToDelete) return;
-      setDeleting(true);
+  const handleClearHistory = useCallback(
+    async (row: ClientRow, doResetFlag: boolean) => {
+      if (!codeUser) return;
+      setClearing(true);
       try {
         const { data, error } = await supabase.functions.invoke("data-api", {
           body: {
             code: codeUser.accessCode,
-            action: "delete-client-by-code",
-            data: { targetCode: codeToDelete },
+            action: "clear-client-flag-history",
+            data: { id: row.id, resetFlag: doResetFlag },
           },
         });
         const payload = (data ?? (error as { context?: { error?: string } })?.context) as
-          | { success?: boolean; deleted?: { access_code: string }; error?: string }
+          | { success?: boolean; resetFlag?: boolean; error?: string }
           | undefined;
-        if (!payload?.success) throw new Error(payload?.error || "Delete failed");
+        if (!payload?.success) throw new Error(payload?.error || "Failed to clear history");
         toast({
-          title: "Client deleted",
-          description: `${payload.deleted?.access_code} was permanently removed.`,
+          title: "History cleared",
+          description: `Flag history wiped for ${row.access_code}${
+            payload.resetFlag ? " and reset to Clean." : "."
+          }`,
         });
-        // Refresh visible list
-        setRows(prev => prev.filter(r => r.access_code !== payload.deleted?.access_code));
-        setDeleteCode("");
-        setConfirmDeleteCode(null);
-        setConfirmDeleteRow(null);
+        // Refresh history view + flag in row
+        setHistoryMap(prev => ({ ...prev, [row.id]: [] }));
+        if (payload.resetFlag) {
+          setRows(prev =>
+            prev.map(r => (r.id === row.id ? { ...r, status_flag: "clean" } : r)),
+          );
+        }
+        setClearTarget(null);
       } catch (err) {
         toast({
           title: "Error",
-          description: err instanceof Error ? err.message : "Could not delete client",
+          description: err instanceof Error ? err.message : "Could not clear history",
           variant: "destructive",
         });
       } finally {
-        setDeleting(false);
+        setClearing(false);
       }
     },
     [codeUser],
@@ -192,7 +195,7 @@ export default function Depuracion() {
       <header>
         <h1 className="text-2xl md:text-3xl font-bold">Client Lookup</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Search clients by access code, ID, or email. Tap a result to view photo, history, and manage it.
+          Search clients by access code, ID, or email. Tap a result to view photo and flag history.
         </p>
       </header>
 
@@ -230,7 +233,7 @@ export default function Depuracion() {
           return (
             <Card key={row.id} className="overflow-hidden">
               <CardContent className="p-4 space-y-4">
-                {/* Header row */}
+                {/* Header */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <code className="font-mono font-bold text-base">{row.access_code}</code>
                   <Badge variant="outline" className={flagClass[row.status_flag]}>
@@ -243,7 +246,7 @@ export default function Depuracion() {
                   )}
                 </div>
 
-                {/* Info grid */}
+                {/* Info */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   <InfoRow label="Client ID" value={row.client_id} mono />
                   <InfoRow label="Email" value={row.client_email} />
@@ -251,7 +254,7 @@ export default function Depuracion() {
                   <InfoRow label="Created" value={date} />
                 </div>
 
-                {/* Receipt photo - natural size, full visible */}
+                {/* Receipt photo */}
                 {row.receipt_signed_url ? (
                   <div className="rounded-md overflow-hidden border bg-muted/30">
                     <a
@@ -275,7 +278,7 @@ export default function Depuracion() {
                   </div>
                 )}
 
-                {/* Expandable history + actions */}
+                {/* Expandable history + clear action */}
                 <Collapsible
                   onOpenChange={open => {
                     if (open) loadHistory(row.id);
@@ -285,13 +288,12 @@ export default function Depuracion() {
                     <Button variant="ghost" size="sm" className="w-full justify-between group">
                       <span className="flex items-center gap-2 text-sm">
                         <History className="h-4 w-4" />
-                        Flag history & actions
+                        Flag history
                       </span>
                       <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-3 pt-3">
-                    {/* History */}
                     <div className="rounded-md border bg-muted/20 p-3">
                       <p className="text-xs font-semibold text-muted-foreground mb-2">FLAG CHANGES</p>
                       {history === "loading" && (
@@ -326,15 +328,22 @@ export default function Depuracion() {
                       )}
                     </div>
 
-                    {/* Delete this client */}
+                    {/* Clear flag history (antecedentes) */}
                     <Button
-                      variant="destructive"
+                      variant="outline"
                       size="sm"
-                      className="w-full"
-                      onClick={() => setConfirmDeleteRow(row)}
+                      className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        setResetFlag(true);
+                        setClearTarget(row);
+                      }}
+                      disabled={
+                        history === "loading" ||
+                        (Array.isArray(history) && history.length === 0 && row.status_flag === "clean")
+                      }
                     >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete this client permanently
+                      <Eraser className="h-4 w-4 mr-2" />
+                      Clear flag history
                     </Button>
                   </CollapsibleContent>
                 </Collapsible>
@@ -344,55 +353,43 @@ export default function Depuracion() {
         })}
       </div>
 
-      {/* Confirm dialog: delete by code (manual section) */}
+      {/* Confirm: clear flag history */}
       <AlertDialog
-        open={!!confirmDeleteCode}
-        onOpenChange={o => !o && setConfirmDeleteCode(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete client {confirmDeleteCode}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently removes the client, revokes their Telegram link, and deletes related revenue. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
-              onClick={() => confirmDeleteCode && handleDeleteByCode(confirmDeleteCode)}
-            >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete permanently"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Confirm dialog: delete row (in-card) */}
-      <AlertDialog
-        open={!!confirmDeleteRow}
-        onOpenChange={o => !o && setConfirmDeleteRow(null)}
+        open={!!clearTarget}
+        onOpenChange={o => !o && setClearTarget(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {confirmDeleteRow?.access_code}?
+              Clear flag history for {clearTarget?.access_code}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the client, revokes their Telegram link, and deletes related revenue. This cannot be undone.
+              This permanently deletes all recorded flag changes (antecedentes) for this client. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
+            <Checkbox
+              id="reset-flag"
+              checked={resetFlag}
+              onCheckedChange={v => setResetFlag(v === true)}
+            />
+            <label htmlFor="reset-flag" className="text-sm leading-tight cursor-pointer">
+              Also reset current flag to <strong>Clean</strong>
+              <span className="block text-xs text-muted-foreground mt-0.5">
+                Currently: {clearTarget ? flagLabel[clearTarget.status_flag] : ""}
+              </span>
+            </label>
+          </div>
+
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleting}
-              onClick={() =>
-                confirmDeleteRow && handleDeleteByCode(confirmDeleteRow.access_code)
-              }
+              disabled={clearing}
+              onClick={() => clearTarget && handleClearHistory(clearTarget, resetFlag)}
             >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete permanently"}
+              {clearing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Clear history"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
