@@ -14,6 +14,7 @@ import Support from "./pages/Support";
 import ActivityLogs from "./pages/ActivityLogs";
 import Resellers from "./pages/Resellers";
 import ResellerDashboard from "./pages/ResellerDashboard";
+import Depuracion from "./pages/Depuracion";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/activity" element={<ActivityLogs />} />
               <Route path="/resellers" element={<Resellers />} />
               <Route path="/reseller" element={<ResellerDashboard />} />
+              <Route path="/depuracion" element={<Depuracion />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
