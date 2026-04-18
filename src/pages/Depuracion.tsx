@@ -5,7 +5,23 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
+import { ChevronDown, History, Trash2, Loader2 } from "lucide-react";
 
 type Flag = "clean" | "pending" | "fugitive";
 
@@ -20,6 +36,14 @@ interface ClientRow {
   reseller_code: string | null;
   created_at: string;
   receipt_signed_url: string | null;
+}
+
+interface FlagHistoryEntry {
+  id: string;
+  action: string;
+  performed_by: string;
+  created_at: string;
+  details: { flag?: string } | null;
 }
 
 const flagLabel: Record<Flag, string> = {
@@ -41,6 +65,17 @@ export default function Depuracion() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
+  // Manual delete by code
+  const [deleteCode, setDeleteCode] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteCode, setConfirmDeleteCode] = useState<string | null>(null);
+
+  // In-card delete confirmation
+  const [confirmDeleteRow, setConfirmDeleteRow] = useState<ClientRow | null>(null);
+
+  // History per row
+  const [historyMap, setHistoryMap] = useState<Record<string, FlagHistoryEntry[] | "loading">>({});
+
   const fetchClients = useCallback(async () => {
     if (!codeUser) return;
     setLoading(true);
@@ -53,7 +88,6 @@ export default function Depuracion() {
           data: { query: query.trim() },
         },
       });
-      // supabase-js wraps non-2xx as error; data may still contain the JSON error body
       const payload = (data ?? (error as { context?: { error?: string } })?.context) as
         | { success?: boolean; data?: ClientRow[]; error?: string }
         | undefined;
@@ -81,15 +115,88 @@ export default function Depuracion() {
     fetchClients();
   };
 
+  const loadHistory = useCallback(
+    async (rowId: string) => {
+      if (!codeUser) return;
+      if (historyMap[rowId] && historyMap[rowId] !== "loading") return; // cached
+      setHistoryMap(prev => ({ ...prev, [rowId]: "loading" }));
+      try {
+        const { data, error } = await supabase.functions.invoke("data-api", {
+          body: {
+            code: codeUser.accessCode,
+            action: "get-client-flag-history",
+            data: { id: rowId },
+          },
+        });
+        const payload = (data ?? (error as { context?: { error?: string } })?.context) as
+          | { success?: boolean; data?: FlagHistoryEntry[]; error?: string }
+          | undefined;
+        if (!payload?.success) throw new Error(payload?.error || "Failed to load history");
+        setHistoryMap(prev => ({ ...prev, [rowId]: payload.data || [] }));
+      } catch (err) {
+        setHistoryMap(prev => {
+          const next = { ...prev };
+          delete next[rowId];
+          return next;
+        });
+        toast({
+          title: "Error",
+          description: err instanceof Error ? err.message : "Could not load history",
+          variant: "destructive",
+        });
+      }
+    },
+    [codeUser, historyMap],
+  );
+
+  const handleDeleteByCode = useCallback(
+    async (codeToDelete: string) => {
+      if (!codeUser || !codeToDelete) return;
+      setDeleting(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("data-api", {
+          body: {
+            code: codeUser.accessCode,
+            action: "delete-client-by-code",
+            data: { targetCode: codeToDelete },
+          },
+        });
+        const payload = (data ?? (error as { context?: { error?: string } })?.context) as
+          | { success?: boolean; deleted?: { access_code: string }; error?: string }
+          | undefined;
+        if (!payload?.success) throw new Error(payload?.error || "Delete failed");
+        toast({
+          title: "Client deleted",
+          description: `${payload.deleted?.access_code} was permanently removed.`,
+        });
+        // Refresh visible list
+        setRows(prev => prev.filter(r => r.access_code !== payload.deleted?.access_code));
+        setDeleteCode("");
+        setConfirmDeleteCode(null);
+        setConfirmDeleteRow(null);
+      } catch (err) {
+        toast({
+          title: "Error",
+          description: err instanceof Error ? err.message : "Could not delete client",
+          variant: "destructive",
+        });
+      } finally {
+        setDeleting(false);
+      }
+    },
+    [codeUser],
+  );
+
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-5xl mx-auto">
       <header>
         <h1 className="text-2xl md:text-3xl font-bold">Client Lookup</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Search clients by access code, ID, or email and view their information.
+          Search clients by access code, ID, or email. Tap a result to view photo, history, and manage it.
         </p>
       </header>
 
+      {/* Search */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Search</CardTitle>
@@ -110,6 +217,42 @@ export default function Depuracion() {
         </CardContent>
       </Card>
 
+      {/* Manual delete by code */}
+      <Card className="border-destructive/30">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Trash2 className="h-4 w-4 text-destructive" />
+            Delete client by code
+          </CardTitle>
+          <CardDescription>
+            Permanently remove a client by access code (e.g. <code className="font-mono">KTOKCOE</code>). Revokes Telegram link and removes revenue.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              const c = deleteCode.trim().toUpperCase();
+              if (!c) return;
+              setConfirmDeleteCode(c);
+            }}
+            className="flex flex-col sm:flex-row gap-2"
+          >
+            <Input
+              placeholder="Access code (e.g. KTOKCOE)"
+              value={deleteCode}
+              onChange={e => setDeleteCode(e.target.value.toUpperCase())}
+              className="flex-1 font-mono uppercase"
+              maxLength={16}
+            />
+            <Button type="submit" variant="destructive" disabled={deleting || !deleteCode.trim()}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Results */}
       <div className="space-y-4">
         {!loading && searched && rows.length === 0 && (
           <Card>
@@ -117,53 +260,178 @@ export default function Depuracion() {
           </Card>
         )}
         {rows.map(row => {
-          const date = new Date(row.created_at).toLocaleDateString();
+          const date = new Date(row.created_at).toLocaleString();
+          const history = historyMap[row.id];
           return (
             <Card key={row.id} className="overflow-hidden">
-              <CardContent className="p-0">
-                <div className="flex flex-col md:flex-row">
-                  <div className="md:w-48 w-full aspect-square md:aspect-auto bg-muted flex items-center justify-center shrink-0">
-                    {row.receipt_signed_url ? (
-                      <a
-                        href={row.receipt_signed_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block w-full h-full"
-                      >
-                        <img
-                          src={row.receipt_signed_url}
-                          alt="Payment receipt"
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      </a>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">No photo</span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 p-4 space-y-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <code className="font-mono font-bold text-base">{row.access_code}</code>
-                      <Badge variant="outline" className={flagClass[row.status_flag]}>
-                        {flagLabel[row.status_flag]}
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                      <InfoRow label="Client ID" value={row.client_id} mono />
-                      <InfoRow label="Email" value={row.client_email} />
-                      <InfoRow label="Group" value={row.group_name} />
-                      <InfoRow label="Reseller" value={row.reseller_code} />
-                      <InfoRow label="Created" value={date} />
-                    </div>
-                  </div>
+              <CardContent className="p-4 space-y-4">
+                {/* Header row */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="font-mono font-bold text-base">{row.access_code}</code>
+                  <Badge variant="outline" className={flagClass[row.status_flag]}>
+                    {flagLabel[row.status_flag]}
+                  </Badge>
+                  {row.reseller_code && (
+                    <Badge variant="outline" className="text-xs">
+                      Reseller: {row.reseller_code}
+                    </Badge>
+                  )}
                 </div>
+
+                {/* Info grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <InfoRow label="Client ID" value={row.client_id} mono />
+                  <InfoRow label="Email" value={row.client_email} />
+                  <InfoRow label="Group" value={row.group_name} />
+                  <InfoRow label="Created" value={date} />
+                </div>
+
+                {/* Receipt photo - natural size, full visible */}
+                {row.receipt_signed_url ? (
+                  <div className="rounded-md overflow-hidden border bg-muted/30">
+                    <a
+                      href={row.receipt_signed_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block"
+                      aria-label="Open receipt in new tab"
+                    >
+                      <img
+                        src={row.receipt_signed_url}
+                        alt={`Receipt for ${row.access_code}`}
+                        className="w-full h-auto max-h-[480px] object-contain bg-background"
+                        loading="lazy"
+                      />
+                    </a>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
+                    No receipt photo
+                  </div>
+                )}
+
+                {/* Expandable history + actions */}
+                <Collapsible
+                  onOpenChange={open => {
+                    if (open) loadHistory(row.id);
+                  }}
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" size="sm" className="w-full justify-between group">
+                      <span className="flex items-center gap-2 text-sm">
+                        <History className="h-4 w-4" />
+                        Flag history & actions
+                      </span>
+                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-3 pt-3">
+                    {/* History */}
+                    <div className="rounded-md border bg-muted/20 p-3">
+                      <p className="text-xs font-semibold text-muted-foreground mb-2">FLAG CHANGES</p>
+                      {history === "loading" && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-2">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Loading...
+                        </p>
+                      )}
+                      {history && history !== "loading" && history.length === 0 && (
+                        <p className="text-xs text-muted-foreground">No flag changes recorded.</p>
+                      )}
+                      {history && history !== "loading" && history.length > 0 && (
+                        <ul className="space-y-2">
+                          {history.map(h => {
+                            const flag = (h.details?.flag as Flag) || "clean";
+                            return (
+                              <li key={h.id} className="flex items-center justify-between gap-2 text-xs">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Badge variant="outline" className={flagClass[flag]}>
+                                    {flagLabel[flag]}
+                                  </Badge>
+                                  <span className="text-muted-foreground truncate">
+                                    by <span className="font-mono">{h.performed_by}</span>
+                                  </span>
+                                </div>
+                                <span className="text-muted-foreground shrink-0">
+                                  {new Date(h.created_at).toLocaleString()}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+
+                    {/* Delete this client */}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setConfirmDeleteRow(row)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete this client permanently
+                    </Button>
+                  </CollapsibleContent>
+                </Collapsible>
               </CardContent>
             </Card>
           );
         })}
       </div>
+
+      {/* Confirm dialog: delete by code (manual section) */}
+      <AlertDialog
+        open={!!confirmDeleteCode}
+        onOpenChange={o => !o && setConfirmDeleteCode(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete client {confirmDeleteCode}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the client, revokes their Telegram link, and deletes related revenue. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={() => confirmDeleteCode && handleDeleteByCode(confirmDeleteCode)}
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm dialog: delete row (in-card) */}
+      <AlertDialog
+        open={!!confirmDeleteRow}
+        onOpenChange={o => !o && setConfirmDeleteRow(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {confirmDeleteRow?.access_code}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the client, revokes their Telegram link, and deletes related revenue. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={() =>
+                confirmDeleteRow && handleDeleteByCode(confirmDeleteRow.access_code)
+              }
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
