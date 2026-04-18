@@ -16,6 +16,7 @@ import Resellers from "./pages/Resellers";
 import ResellerDashboard from "./pages/ResellerDashboard";
 import Depuracion from "./pages/Depuracion";
 import FlagManagement from "./pages/FlagManagement";
+import ClearHistory from "./pages/ClearHistory";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => (
               <Route path="/reseller" element={<ResellerDashboard />} />
               <Route path="/depuracion" element={<Depuracion />} />
               <Route path="/flags" element={<FlagManagement />} />
+              <Route path="/clear-history" element={<ClearHistory />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -328,23 +328,6 @@ export default function Depuracion() {
                       )}
                     </div>
 
-                    {/* Clear flag history (antecedentes) */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => {
-                        setResetFlag(true);
-                        setClearTarget(row);
-                      }}
-                      disabled={
-                        history === "loading" ||
-                        (Array.isArray(history) && history.length === 0 && row.status_flag === "clean")
-                      }
-                    >
-                      <Eraser className="h-4 w-4 mr-2" />
-                      Clear flag history
-                    </Button>
                   </CollapsibleContent>
                 </Collapsible>
               </CardContent>
