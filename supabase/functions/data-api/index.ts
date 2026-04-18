@@ -1426,14 +1426,32 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Log to activity
+        // Resolve performer name (admin or reseller) so history shows who set the flag
+        let performerName: string | null = null;
+        const { data: adminRow } = await supabase
+          .from('admin_codes')
+          .select('name')
+          .eq('code', accessCode)
+          .maybeSingle();
+        if (adminRow?.name) {
+          performerName = adminRow.name;
+        } else {
+          const { data: resellerRow } = await supabase
+            .from('resellers')
+            .select('name')
+            .eq('code', accessCode)
+            .maybeSingle();
+          if (resellerRow?.name) performerName = resellerRow.name;
+        }
+
+        // Log to activity (include performer_name in details)
         await supabase.from('activity_logs').insert({
           entity_type: 'client_flag',
           entity_id: id,
           action: `flag_set_${flag}`,
           performed_by: accessCode,
           reseller_code: isReseller ? accessCode : null,
-          details: { flag },
+          details: { flag, performer_name: performerName, performer_role: isAdmin ? 'admin' : 'reseller' },
         });
 
         return new Response(
@@ -1489,8 +1507,46 @@ Deno.serve(async (req) => {
           );
         }
 
+        // Resolve performer names for legacy entries that lack details.performer_name
+        type HistRow = { id: string; action: string; performed_by: string; created_at: string; details: { flag?: string; performer_name?: string; performer_role?: string } | null };
+        const rows = (history || []) as HistRow[];
+        const codes = Array.from(
+          new Set(rows.filter(h => !h.details?.performer_name && h.performed_by).map(h => h.performed_by))
+        );
+
+        const nameMap: Record<string, { name: string; role: string }> = {};
+        if (codes.length > 0) {
+          const { data: admins } = await supabase
+            .from('admin_codes')
+            .select('code, name')
+            .in('code', codes);
+          (admins || []).forEach((a: { code: string; name: string }) => {
+            nameMap[a.code] = { name: a.name, role: 'admin' };
+          });
+          const remaining = codes.filter(c => !nameMap[c]);
+          if (remaining.length > 0) {
+            const { data: resellers } = await supabase
+              .from('resellers')
+              .select('code, name')
+              .in('code', remaining);
+            (resellers || []).forEach((r: { code: string; name: string }) => {
+              nameMap[r.code] = { name: r.name, role: 'reseller' };
+            });
+          }
+        }
+
+        const enriched = rows.map(h => {
+          const fromDetails = h.details?.performer_name;
+          const resolved = !fromDetails ? nameMap[h.performed_by] : null;
+          return {
+            ...h,
+            performer_name: fromDetails || resolved?.name || null,
+            performer_role: h.details?.performer_role || resolved?.role || null,
+          };
+        });
+
         return new Response(
-          JSON.stringify({ success: true, data: history || [] }),
+          JSON.stringify({ success: true, data: enriched }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
