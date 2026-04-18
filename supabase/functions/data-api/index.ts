@@ -1390,7 +1390,8 @@ Deno.serve(async (req) => {
           );
         }
 
-        const { id, flag } = (data || {}) as { id?: string; flag?: string };
+        const { id, flag, note } = (data || {}) as { id?: string; flag?: string; note?: string | null };
+        const cleanNote = typeof note === 'string' ? note.trim().slice(0, 300) : null;
 
         if (!id || !flag || !['clean', 'pending', 'fugitive'].includes(flag)) {
           return new Response(
@@ -1444,14 +1445,19 @@ Deno.serve(async (req) => {
           if (resellerRow?.name) performerName = resellerRow.name;
         }
 
-        // Log to activity (include performer_name in details)
+        // Log to activity (include performer_name + optional note in details)
         await supabase.from('activity_logs').insert({
           entity_type: 'client_flag',
           entity_id: id,
           action: `flag_set_${flag}`,
           performed_by: accessCode,
           reseller_code: isReseller ? accessCode : null,
-          details: { flag, performer_name: performerName, performer_role: isAdmin ? 'admin' : 'reseller' },
+          details: {
+            flag,
+            performer_name: performerName,
+            performer_role: isAdmin ? 'admin' : 'reseller',
+            note: cleanNote || undefined,
+          },
         });
 
         return new Response(
