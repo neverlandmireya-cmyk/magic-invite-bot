@@ -5,24 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
-import { ChevronDown, History, Loader2, Eraser } from "lucide-react";
+import { ChevronDown, History, Loader2 } from "lucide-react";
 
 type Flag = "clean" | "pending" | "fugitive";
 
@@ -68,11 +57,6 @@ export default function Depuracion() {
 
   // History per row
   const [historyMap, setHistoryMap] = useState<Record<string, FlagHistoryEntry[] | "loading">>({});
-
-  // Clear-history confirmation
-  const [clearTarget, setClearTarget] = useState<ClientRow | null>(null);
-  const [resetFlag, setResetFlag] = useState(true);
-  const [clearing, setClearing] = useState(false);
 
   const fetchClients = useCallback(async () => {
     if (!codeUser) return;
