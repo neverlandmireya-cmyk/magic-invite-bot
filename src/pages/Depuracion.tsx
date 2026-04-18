@@ -5,24 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
-import { ChevronDown, History, Loader2, Eraser } from "lucide-react";
+import { ChevronDown, History, Loader2 } from "lucide-react";
 
 type Flag = "clean" | "pending" | "fugitive";
 
@@ -68,11 +57,6 @@ export default function Depuracion() {
 
   // History per row
   const [historyMap, setHistoryMap] = useState<Record<string, FlagHistoryEntry[] | "loading">>({});
-
-  // Clear-history confirmation
-  const [clearTarget, setClearTarget] = useState<ClientRow | null>(null);
-  const [resetFlag, setResetFlag] = useState(true);
-  const [clearing, setClearing] = useState(false);
 
   const fetchClients = useCallback(async () => {
     if (!codeUser) return;
@@ -147,48 +131,7 @@ export default function Depuracion() {
     [codeUser, historyMap],
   );
 
-  const handleClearHistory = useCallback(
-    async (row: ClientRow, doResetFlag: boolean) => {
-      if (!codeUser) return;
-      setClearing(true);
-      try {
-        const { data, error } = await supabase.functions.invoke("data-api", {
-          body: {
-            code: codeUser.accessCode,
-            action: "clear-client-flag-history",
-            data: { id: row.id, resetFlag: doResetFlag },
-          },
-        });
-        const payload = (data ?? (error as { context?: { error?: string } })?.context) as
-          | { success?: boolean; resetFlag?: boolean; error?: string }
-          | undefined;
-        if (!payload?.success) throw new Error(payload?.error || "Failed to clear history");
-        toast({
-          title: "History cleared",
-          description: `Flag history wiped for ${row.access_code}${
-            payload.resetFlag ? " and reset to Clean." : "."
-          }`,
-        });
-        // Refresh history view + flag in row
-        setHistoryMap(prev => ({ ...prev, [row.id]: [] }));
-        if (payload.resetFlag) {
-          setRows(prev =>
-            prev.map(r => (r.id === row.id ? { ...r, status_flag: "clean" } : r)),
-          );
-        }
-        setClearTarget(null);
-      } catch (err) {
-        toast({
-          title: "Error",
-          description: err instanceof Error ? err.message : "Could not clear history",
-          variant: "destructive",
-        });
-      } finally {
-        setClearing(false);
-      }
-    },
-    [codeUser],
-  );
+
 
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-5xl mx-auto">
@@ -327,24 +270,6 @@ export default function Depuracion() {
                         </ul>
                       )}
                     </div>
-
-                    {/* Clear flag history (antecedentes) */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => {
-                        setResetFlag(true);
-                        setClearTarget(row);
-                      }}
-                      disabled={
-                        history === "loading" ||
-                        (Array.isArray(history) && history.length === 0 && row.status_flag === "clean")
-                      }
-                    >
-                      <Eraser className="h-4 w-4 mr-2" />
-                      Clear flag history
-                    </Button>
                   </CollapsibleContent>
                 </Collapsible>
               </CardContent>
@@ -352,48 +277,6 @@ export default function Depuracion() {
           );
         })}
       </div>
-
-      {/* Confirm: clear flag history */}
-      <AlertDialog
-        open={!!clearTarget}
-        onOpenChange={o => !o && setClearTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Clear flag history for {clearTarget?.access_code}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes all recorded flag changes (antecedentes) for this client. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
-            <Checkbox
-              id="reset-flag"
-              checked={resetFlag}
-              onCheckedChange={v => setResetFlag(v === true)}
-            />
-            <label htmlFor="reset-flag" className="text-sm leading-tight cursor-pointer">
-              Also reset current flag to <strong>Clean</strong>
-              <span className="block text-xs text-muted-foreground mt-0.5">
-                Currently: {clearTarget ? flagLabel[clearTarget.status_flag] : ""}
-              </span>
-            </label>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={clearing}
-              onClick={() => clearTarget && handleClearHistory(clearTarget, resetFlag)}
-            >
-              {clearing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Clear history"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
