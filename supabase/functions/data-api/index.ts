@@ -130,7 +130,26 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { code, action, data }: RequestBody = await req.json();
+    // Robust body parsing — tolerate empty/non-JSON bodies (e.g. GET pings, preflight retries)
+    let body: RequestBody;
+    try {
+      const raw = await req.text();
+      if (!raw || !raw.trim()) {
+        return new Response(
+          JSON.stringify({ error: "Empty request body. Expected JSON with { code, action }." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      body = JSON.parse(raw) as RequestBody;
+    } catch (parseErr) {
+      console.error("Failed to parse request body:", parseErr);
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON in request body." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { code, action, data } = body;
 
     if (!code || !action) {
       return new Response(
