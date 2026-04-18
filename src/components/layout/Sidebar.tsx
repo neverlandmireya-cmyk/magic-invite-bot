@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
-import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, Activity, Users, ShieldAlert } from "lucide-react";
+import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, Activity, Users, ShieldAlert, Flag } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -10,7 +10,8 @@ import { useState } from "react";
 const adminNavItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/links", label: "Invite Links", icon: Link2 },
-  { path: "/depuracion", label: "Client Tracking", icon: ShieldAlert },
+  { path: "/depuracion", label: "Client Lookup", icon: ShieldAlert },
+  { path: "/flags", label: "Flag Management", icon: Flag },
   { path: "/activity", label: "Activity Logs", icon: Activity },
   { path: "/resellers", label: "Resellers", icon: Users },
   { path: "/admin-codes", label: "Admin Access", icon: UserCog },
@@ -21,7 +22,8 @@ const adminNavItems = [
 const resellerNavItems = [
   { path: "/reseller", label: "Dashboard", icon: LayoutDashboard },
   { path: "/links", label: "Invite Links", icon: Link2 },
-  { path: "/depuracion", label: "Client Tracking", icon: ShieldAlert },
+  { path: "/depuracion", label: "Client Lookup", icon: ShieldAlert },
+  { path: "/flags", label: "Flag Management", icon: Flag },
   { path: "/activity", label: "Activity Logs", icon: Activity },
   { path: "/support", label: "Ticket", icon: HelpCircle },
 ];
