@@ -33,12 +33,12 @@ const flagClass: Record<Flag, string> = {
 };
 
 export default function FlagManagement() {
-  const { codeUser } = useAuth();
+  const { codeUser, isAdmin } = useAuth();
   const [code, setCode] = useState("");
   const [client, setClient] = useState<ClientRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [note, setNote] = useState("");
+  const [performerName, setPerformerName] = useState("");
 
   const findClient = async (e: React.FormEvent) => {
     e.preventDefault();
