@@ -90,6 +90,7 @@ export type Database = {
           receipt_url: string | null
           reseller_code: string | null
           status: string | null
+          status_flag: string
           used_at: string | null
         }
         Insert: {
@@ -107,6 +108,7 @@ export type Database = {
           receipt_url?: string | null
           reseller_code?: string | null
           status?: string | null
+          status_flag?: string
           used_at?: string | null
         }
         Update: {
@@ -124,6 +126,7 @@ export type Database = {
           receipt_url?: string | null
           reseller_code?: string | null
           status?: string | null
+          status_flag?: string
           used_at?: string | null
         }
         Relationships: []
