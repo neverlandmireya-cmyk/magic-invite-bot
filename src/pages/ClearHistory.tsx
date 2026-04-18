@@ -224,30 +224,38 @@ export default function ClearHistory() {
                     const flag = (h.details?.flag as Flag) || "clean";
                     const name = h.performer_name || h.details?.performer_name;
                     const role = h.performer_role || h.details?.performer_role;
+                    const noteText = h.details?.note;
                     return (
-                      <li key={h.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs border-b border-border/40 last:border-0 pb-2 last:pb-0">
-                        <div className="flex items-center gap-2 flex-wrap min-w-0">
-                          <Badge variant="outline" className={flagClass[flag]}>
-                            {flagLabel[flag]}
-                          </Badge>
-                          <span className="text-muted-foreground">
-                            by{" "}
-                            {name ? (
-                              <>
-                                <span className="font-medium text-foreground">{name}</span>{" "}
-                                <span className="font-mono text-[10px] opacity-70">({h.performed_by})</span>
-                              </>
-                            ) : (
-                              <span className="font-mono">{h.performed_by}</span>
-                            )}
-                            {role && (
-                              <span className="ml-1 text-[10px] uppercase opacity-60">· {role}</span>
-                            )}
+                      <li key={h.id} className="flex flex-col gap-1 text-xs border-b border-border/40 last:border-0 pb-2 last:pb-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <Badge variant="outline" className={flagClass[flag]}>
+                              {flagLabel[flag]}
+                            </Badge>
+                            <span className="text-muted-foreground">
+                              by{" "}
+                              {name ? (
+                                <>
+                                  <span className="font-medium text-foreground">{name}</span>{" "}
+                                  <span className="font-mono text-[10px] opacity-70">({h.performed_by})</span>
+                                </>
+                              ) : (
+                                <span className="font-mono">{h.performed_by}</span>
+                              )}
+                              {role && (
+                                <span className="ml-1 text-[10px] uppercase opacity-60">· {role}</span>
+                              )}
+                            </span>
+                          </div>
+                          <span className="text-muted-foreground shrink-0">
+                            {new Date(h.created_at).toLocaleString()}
                           </span>
                         </div>
-                        <span className="text-muted-foreground shrink-0">
-                          {new Date(h.created_at).toLocaleString()}
-                        </span>
+                        {noteText && (
+                          <p className="text-[11px] text-muted-foreground italic pl-2 border-l-2 border-border ml-1">
+                            “{noteText}”
+                          </p>
+                        )}
                       </li>
                     );
                   })}
