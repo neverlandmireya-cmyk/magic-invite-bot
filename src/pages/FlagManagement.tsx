@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 
@@ -159,17 +159,27 @@ export default function FlagManagement() {
             </div>
 
             <div className="pt-3 border-t space-y-3">
-              <div>
-                <p className="text-sm font-medium mb-1">Note / reason (optional)</p>
-                <Textarea
-                  placeholder="e.g. Reported by client X, paid late, etc."
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  rows={2}
-                  maxLength={300}
-                />
-                <p className="text-[10px] text-muted-foreground mt-1">{note.length}/300</p>
-              </div>
+              {isAdmin ? (
+                <div>
+                  <p className="text-sm font-medium mb-1">
+                    Your name <span className="text-destructive">*</span>
+                  </p>
+                  <Input
+                    placeholder="Type your name (e.g. Carlos)"
+                    value={performerName}
+                    onChange={e => setPerformerName(e.target.value)}
+                    maxLength={80}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Required. This name will appear in the flag history.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Your reseller name will be recorded automatically.
+                </p>
+              )}
+
               <p className="text-sm font-medium">Set status individually</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Button
