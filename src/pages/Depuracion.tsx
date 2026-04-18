@@ -217,41 +217,6 @@ export default function Depuracion() {
         </CardContent>
       </Card>
 
-      {/* Manual delete by code */}
-      <Card className="border-destructive/30">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Trash2 className="h-4 w-4 text-destructive" />
-            Delete client by code
-          </CardTitle>
-          <CardDescription>
-            Permanently remove a client by access code (e.g. <code className="font-mono">KTOKCOE</code>). Revokes Telegram link and removes revenue.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={e => {
-              e.preventDefault();
-              const c = deleteCode.trim().toUpperCase();
-              if (!c) return;
-              setConfirmDeleteCode(c);
-            }}
-            className="flex flex-col sm:flex-row gap-2"
-          >
-            <Input
-              placeholder="Access code (e.g. KTOKCOE)"
-              value={deleteCode}
-              onChange={e => setDeleteCode(e.target.value.toUpperCase())}
-              className="flex-1 font-mono uppercase"
-              maxLength={16}
-            />
-            <Button type="submit" variant="destructive" disabled={deleting || !deleteCode.trim()}>
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
       {/* Results */}
       <div className="space-y-4">
         {!loading && searched && rows.length === 0 && (
