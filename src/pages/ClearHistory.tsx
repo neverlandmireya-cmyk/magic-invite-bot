@@ -36,7 +36,9 @@ interface FlagHistoryEntry {
   id: string;
   performed_by: string;
   created_at: string;
-  details: { flag?: string } | null;
+  details: { flag?: string; performer_name?: string; performer_role?: string } | null;
+  performer_name?: string | null;
+  performer_role?: string | null;
 }
 
 const flagLabel: Record<Flag, string> = {
