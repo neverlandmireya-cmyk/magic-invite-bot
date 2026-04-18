@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
-import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, Activity, Users, ShieldAlert } from "lucide-react";
+import { Link2, Settings, LogOut, LayoutDashboard, Shield, Key, UserCog, HelpCircle, Menu, Activity, Users, ShieldAlert, Flag } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
