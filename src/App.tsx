@@ -15,6 +15,7 @@ import ActivityLogs from "./pages/ActivityLogs";
 import Resellers from "./pages/Resellers";
 import ResellerDashboard from "./pages/ResellerDashboard";
 import Depuracion from "./pages/Depuracion";
+import FlagManagement from "./pages/FlagManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
