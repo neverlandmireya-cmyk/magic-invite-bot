@@ -1390,8 +1390,7 @@ Deno.serve(async (req) => {
           );
         }
 
-        const { id, flag, note } = (data || {}) as { id?: string; flag?: string; note?: string | null };
-        const cleanNote = typeof note === 'string' ? note.trim().slice(0, 300) : null;
+        const { id, flag, performer_name: providedName } = (data || {}) as { id?: string; flag?: string; performer_name?: string | null };
 
         if (!id || !flag || !['clean', 'pending', 'fugitive'].includes(flag)) {
           return new Response(
@@ -1427,25 +1426,29 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Resolve performer name (admin or reseller) so history shows who set the flag
+        // Resolve performer name:
+        // - Admin: use the name they typed in the form (required)
+        // - Reseller: auto-resolve from their reseller code
         let performerName: string | null = null;
-        const { data: adminRow } = await supabase
-          .from('admin_codes')
-          .select('name')
-          .eq('code', accessCode)
-          .maybeSingle();
-        if (adminRow?.name) {
-          performerName = adminRow.name;
+        if (isAdmin) {
+          performerName = typeof providedName === 'string' ? providedName.trim().slice(0, 80) : '';
+          if (!performerName) {
+            return new Response(
+              JSON.stringify({ error: "performer_name is required for admins" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
         } else {
+          // Reseller — fetch name from resellers table
           const { data: resellerRow } = await supabase
             .from('resellers')
             .select('name')
             .eq('code', accessCode)
             .maybeSingle();
-          if (resellerRow?.name) performerName = resellerRow.name;
+          performerName = resellerRow?.name || accessCode;
         }
 
-        // Log to activity (include performer_name + optional note in details)
+        // Log to activity (include performer_name in details)
         await supabase.from('activity_logs').insert({
           entity_type: 'client_flag',
           entity_id: id,
@@ -1456,7 +1459,6 @@ Deno.serve(async (req) => {
             flag,
             performer_name: performerName,
             performer_role: isAdmin ? 'admin' : 'reseller',
-            note: cleanNote || undefined,
           },
         });
 

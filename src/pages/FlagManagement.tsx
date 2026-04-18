@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 
@@ -33,12 +33,12 @@ const flagClass: Record<Flag, string> = {
 };
 
 export default function FlagManagement() {
-  const { codeUser } = useAuth();
+  const { codeUser, isAdmin } = useAuth();
   const [code, setCode] = useState("");
   const [client, setClient] = useState<ClientRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [note, setNote] = useState("");
+  const [performerName, setPerformerName] = useState("");
 
   const findClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,19 +84,31 @@ export default function FlagManagement() {
 
   const setFlag = async (flag: Flag) => {
     if (!codeUser || !client) return;
+    if (isAdmin && !performerName.trim()) {
+      toast({
+        title: "Name required",
+        description: "Please write the name of who is setting this flag.",
+        variant: "destructive",
+      });
+      return;
+    }
     setUpdating(true);
     try {
       const { data, error } = await supabase.functions.invoke("data-api", {
         body: {
           code: codeUser.accessCode,
           action: "update-client-flag",
-          data: { id: client.id, flag, note: note.trim() || null },
+          data: {
+            id: client.id,
+            flag,
+            performer_name: isAdmin ? performerName.trim() : null,
+          },
         },
       });
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || "Update failed");
       setClient({ ...client, status_flag: flag });
-      setNote("");
+      if (isAdmin) setPerformerName("");
       toast({ title: "Status updated", description: `Marked as ${flagLabel[flag]}` });
     } catch (err) {
       toast({
@@ -159,17 +171,27 @@ export default function FlagManagement() {
             </div>
 
             <div className="pt-3 border-t space-y-3">
-              <div>
-                <p className="text-sm font-medium mb-1">Note / reason (optional)</p>
-                <Textarea
-                  placeholder="e.g. Reported by client X, paid late, etc."
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  rows={2}
-                  maxLength={300}
-                />
-                <p className="text-[10px] text-muted-foreground mt-1">{note.length}/300</p>
-              </div>
+              {isAdmin ? (
+                <div>
+                  <p className="text-sm font-medium mb-1">
+                    Your name <span className="text-destructive">*</span>
+                  </p>
+                  <Input
+                    placeholder="Type your name (e.g. Carlos)"
+                    value={performerName}
+                    onChange={e => setPerformerName(e.target.value)}
+                    maxLength={80}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Required. This name will appear in the flag history.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Your reseller name will be recorded automatically.
+                </p>
+              )}
+
               <p className="text-sm font-medium">Set status individually</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Button
