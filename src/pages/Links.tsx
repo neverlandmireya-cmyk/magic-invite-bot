@@ -111,6 +111,12 @@ export default function Links() {
   const [savingClientInfo, setSavingClientInfo] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
+  // Fugitive match warning (shown inside Edit Client dialog while typing)
+  const [fugitiveMatches, setFugitiveMatches] = useState<Array<{
+    id: string; access_code: string; client_email: string | null;
+    client_id: string | null; group_name: string | null;
+  }>>([]);
+
   const dashboardUrl = 'https://login.exylus.net';
 
   useEffect(() => {
