@@ -53,9 +53,18 @@ export default function Depuracion() {
           data: { query: query.trim() },
         },
       });
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || "Search failed");
-      setRows(data.data || []);
+      // supabase-js wraps non-2xx as error; data may still contain the JSON error body
+      const payload = (data ?? (error as { context?: { error?: string } })?.context) as
+        | { success?: boolean; data?: ClientRow[]; error?: string }
+        | undefined;
+      if (error && !payload?.error) throw error;
+      if (!payload?.success) {
+        throw new Error(
+          payload?.error ||
+            "Search failed. Make sure you are signed in as an admin or reseller.",
+        );
+      }
+      setRows(payload.data || []);
     } catch (err) {
       toast({
         title: "Error",
