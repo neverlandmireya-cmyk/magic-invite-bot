@@ -4,11 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-
-type Flag = "clean" | "pending" | "fugitive";
+import { Ban, ShieldCheck } from "lucide-react";
 
 interface ClientRow {
   id: string;
@@ -16,24 +14,11 @@ interface ClientRow {
   client_id: string | null;
   client_email: string | null;
   group_name: string | null;
-  status_flag: Flag;
   reseller_code: string | null;
   status: string | null;
 }
 
-const flagLabel: Record<Flag, string> = {
-  clean: "Clean",
-  pending: "Pending",
-  fugitive: "Fugitive",
-};
-
-const flagClass: Record<Flag, string> = {
-  clean: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
-  pending: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-  fugitive: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
-};
-
-export default function FlagManagement() {
+export default function BanManagement() {
   const { codeUser, isAdmin } = useAuth();
   const [code, setCode] = useState("");
   const [client, setClient] = useState<ClientRow | null>(null);
@@ -59,10 +44,7 @@ export default function FlagManagement() {
         | undefined;
       if (error && !payload?.error) throw error;
       if (!payload?.success) {
-        throw new Error(
-          payload?.error ||
-            "Search failed. Make sure you are signed in as an admin or reseller.",
-        );
+        throw new Error(payload?.error || "Search failed");
       }
       const rows: ClientRow[] = payload.data || [];
       const match =
@@ -83,12 +65,13 @@ export default function FlagManagement() {
     }
   };
 
-  const setFlag = async (flag: Flag) => {
+  const toggleBan = async () => {
     if (!codeUser || !client) return;
+    const isBanned = client.status === "banned";
     if (isAdmin && !performerName.trim()) {
       toast({
         title: "Name required",
-        description: "Please write the name of who is setting this flag.",
+        description: "Please write your name before banning/unbanning.",
         variant: "destructive",
       });
       return;
@@ -98,23 +81,27 @@ export default function FlagManagement() {
       const { data, error } = await supabase.functions.invoke("data-api", {
         body: {
           code: codeUser.accessCode,
-          action: "update-client-flag",
+          action: isBanned ? "unban-client" : "ban-client",
           data: {
             id: client.id,
-            flag,
             performer_name: isAdmin ? performerName.trim() : null,
           },
         },
       });
       if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || "Update failed");
-      setClient({ ...client, status_flag: flag });
+      if (!data?.success) throw new Error(data?.error || "Action failed");
+      setClient({ ...client, status: data.status });
       if (isAdmin) setPerformerName("");
-      toast({ title: "Status updated", description: `Marked as ${flagLabel[flag]}` });
+      toast({
+        title: isBanned ? "User unbanned" : "User banned",
+        description: isBanned
+          ? "This user can sign in again."
+          : "This user can no longer sign in. Nothing was deleted.",
+      });
     } catch (err) {
       toast({
         title: "Error",
-        description: err instanceof Error ? err.message : "Could not update status",
+        description: err instanceof Error ? err.message : "Could not update ban status",
         variant: "destructive",
       });
     } finally {
@@ -122,19 +109,21 @@ export default function FlagManagement() {
     }
   };
 
+  const isBanned = client?.status === "banned";
+
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-3xl mx-auto">
       <header>
-        <h1 className="text-2xl md:text-3xl font-bold">Flag Management</h1>
+        <h1 className="text-2xl md:text-3xl font-bold">Ban Management</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Find a client by access code and individually set their status.
+          Block or unblock a single user by access code. Nothing is deleted — only login is restricted.
         </p>
       </header>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Find Client</CardTitle>
-          <CardDescription>Enter the exact access code to load the client.</CardDescription>
+          <CardTitle className="text-lg">Find client</CardTitle>
+          <CardDescription>Enter the exact access code.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={findClient} className="flex flex-col sm:flex-row gap-2">
@@ -142,7 +131,7 @@ export default function FlagManagement() {
               placeholder="Access code"
               value={code}
               onChange={e => setCode(e.target.value)}
-              className="flex-1 font-mono"
+              className="flex-1 font-mono uppercase"
             />
             <Button type="submit" disabled={loading || !code.trim()}>
               {loading ? "Loading..." : "Find"}
@@ -155,13 +144,21 @@ export default function FlagManagement() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <CardTitle className="text-lg font-mono">{client.access_code}</CardTitle>
-                <CardDescription>{client.client_email || client.client_id || "No client info"}</CardDescription>
+              <div className="min-w-0">
+                <CardTitle className="text-lg font-mono truncate">{client.access_code}</CardTitle>
+                <CardDescription className="truncate">
+                  {client.client_email || client.client_id || "No client info"}
+                </CardDescription>
               </div>
-              <Badge variant="outline" className={flagClass[client.status_flag]}>
-                {flagLabel[client.status_flag]}
-              </Badge>
+              {isBanned ? (
+                <Badge variant="outline" className="bg-red-600/20 text-red-600 dark:text-red-400 border-red-600/40 uppercase">
+                  Banned
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30 uppercase">
+                  Active
+                </Badge>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -178,13 +175,13 @@ export default function FlagManagement() {
                     Your name <span className="text-destructive">*</span>
                   </p>
                   <Input
-                    placeholder="Type your name (e.g. Carlos)"
+                    placeholder="Type your name"
                     value={performerName}
                     onChange={e => setPerformerName(e.target.value)}
                     maxLength={80}
                   />
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    Required. This name will appear in the flag history.
+                    Required. Recorded in activity logs.
                   </p>
                 </div>
               ) : (
@@ -193,47 +190,14 @@ export default function FlagManagement() {
                 </p>
               )}
 
-              <p className="text-sm font-medium">Set status individually</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <Button
-                  variant="outline"
-                  disabled={updating || client.status_flag === "clean"}
-                  onClick={() => setFlag("clean")}
-                  className="border-green-500/30 hover:bg-green-500/10 hover:text-green-600"
-                >
-                  Mark Clean
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={updating || client.status_flag === "pending"}
-                  onClick={() => setFlag("pending")}
-                  className="border-yellow-500/30 hover:bg-yellow-500/10 hover:text-yellow-600"
-                >
-                  Mark Pending
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={updating || client.status_flag === "fugitive"}
-                  onClick={() => setFlag("fugitive")}
-                  className="border-red-500/30 hover:bg-red-500/10 hover:text-red-600"
-                >
-                  Mark Fugitive
-                </Button>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t space-y-2">
-              <p className="text-sm font-medium">Block sign-in (individual ban)</p>
-              <p className="text-xs text-muted-foreground">
-                Banning only blocks login. Nothing is deleted. You can unban from here at any time.
-              </p>
-              {client.status === "banned" ? (
+              {isBanned ? (
                 <Button
                   variant="outline"
                   disabled={updating}
                   onClick={toggleBan}
                   className="w-full border-green-500/40 text-green-600 hover:bg-green-500/10 hover:text-green-600"
                 >
+                  <ShieldCheck className="h-4 w-4 mr-2" />
                   {updating ? "Working..." : "Unban user"}
                 </Button>
               ) : (
@@ -243,6 +207,7 @@ export default function FlagManagement() {
                   onClick={toggleBan}
                   className="w-full border-red-600/40 text-red-600 hover:bg-red-600/10 hover:text-red-600"
                 >
+                  <Ban className="h-4 w-4 mr-2" />
                   {updating ? "Working..." : "Ban user (block login)"}
                 </Button>
               )}
