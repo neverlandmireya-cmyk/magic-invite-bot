@@ -18,6 +18,7 @@ interface ClientRow {
   group_name: string | null;
   status_flag: Flag;
   reseller_code: string | null;
+  status: string | null;
 }
 
 const flagLabel: Record<Flag, string> = {
@@ -79,6 +80,50 @@ export default function FlagManagement() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleBan = async () => {
+    if (!codeUser || !client) return;
+    const isBanned = client.status === "banned";
+    if (isAdmin && !performerName.trim()) {
+      toast({
+        title: "Name required",
+        description: "Please write your name before banning/unbanning.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setUpdating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("data-api", {
+        body: {
+          code: codeUser.accessCode,
+          action: isBanned ? "unban-client" : "ban-client",
+          data: {
+            id: client.id,
+            performer_name: isAdmin ? performerName.trim() : null,
+          },
+        },
+      });
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || "Action failed");
+      setClient({ ...client, status: data.status });
+      if (isAdmin) setPerformerName("");
+      toast({
+        title: isBanned ? "User unbanned" : "User banned",
+        description: isBanned
+          ? "This user can sign in again."
+          : "This user can no longer sign in. Nothing was deleted.",
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Could not update ban status",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -158,9 +203,16 @@ export default function FlagManagement() {
                 <CardTitle className="text-lg font-mono">{client.access_code}</CardTitle>
                 <CardDescription>{client.client_email || client.client_id || "No client info"}</CardDescription>
               </div>
-              <Badge variant="outline" className={flagClass[client.status_flag]}>
-                {flagLabel[client.status_flag]}
-              </Badge>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline" className={flagClass[client.status_flag]}>
+                  {flagLabel[client.status_flag]}
+                </Badge>
+                {client.status === "banned" && (
+                  <Badge variant="outline" className="bg-red-600/20 text-red-600 dark:text-red-400 border-red-600/40 uppercase text-[10px]">
+                    Banned
+                  </Badge>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -219,6 +271,32 @@ export default function FlagManagement() {
                   Mark Fugitive
                 </Button>
               </div>
+            </div>
+
+            <div className="pt-3 border-t space-y-2">
+              <p className="text-sm font-medium">Block sign-in (individual ban)</p>
+              <p className="text-xs text-muted-foreground">
+                Banning only blocks login. Nothing is deleted. You can unban from here at any time.
+              </p>
+              {client.status === "banned" ? (
+                <Button
+                  variant="outline"
+                  disabled={updating}
+                  onClick={toggleBan}
+                  className="w-full border-green-500/40 text-green-600 hover:bg-green-500/10 hover:text-green-600"
+                >
+                  {updating ? "Working..." : "Unban user"}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  disabled={updating}
+                  onClick={toggleBan}
+                  className="w-full border-red-600/40 text-red-600 hover:bg-red-600/10 hover:text-red-600"
+                >
+                  {updating ? "Working..." : "Ban user (block login)"}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -1468,6 +1468,119 @@ Deno.serve(async (req) => {
         );
       }
 
+      // ============ BAN / UNBAN CLIENT (individual, no data deletion) ============
+      case 'ban-client':
+      case 'unban-client': {
+        if (!isAdmin && !isReseller) {
+          return new Response(
+            JSON.stringify({ error: "Access denied" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { id, performer_name: providedName } = (data || {}) as { id?: string; performer_name?: string | null };
+        if (!id) {
+          return new Response(
+            JSON.stringify({ error: "id required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Resellers can only act on their own clients
+        const { data: link } = await supabase
+          .from('invite_links')
+          .select('reseller_code, status, access_code, group_name, client_email')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (!link) {
+          return new Response(
+            JSON.stringify({ error: "Client not found" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        if (isReseller && link.reseller_code !== accessCode) {
+          return new Response(
+            JSON.stringify({ error: "You can only manage your own clients" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const isBanAction = action === 'ban-client';
+        const newStatus = isBanAction ? 'banned' : 'active';
+
+        const { error: upErr } = await supabase
+          .from('invite_links')
+          .update({ status: newStatus })
+          .eq('id', id);
+
+        if (upErr) {
+          return new Response(
+            JSON.stringify({ error: upErr.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Resolve performer name
+        let performerName: string | null = null;
+        if (isAdmin) {
+          performerName = typeof providedName === 'string' ? providedName.trim().slice(0, 80) : '';
+          if (!performerName) {
+            return new Response(
+              JSON.stringify({ error: "performer_name is required for admins" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } else {
+          const { data: resellerRow } = await supabase
+            .from('resellers')
+            .select('name')
+            .eq('code', accessCode)
+            .maybeSingle();
+          performerName = resellerRow?.name || accessCode;
+        }
+
+        // Activity log
+        await supabase.from('activity_logs').insert({
+          entity_type: 'client_ban',
+          entity_id: id,
+          action: isBanAction ? 'client_banned' : 'client_unbanned',
+          performed_by: accessCode,
+          reseller_code: isReseller ? accessCode : null,
+          details: {
+            performer_name: performerName,
+            performer_role: isAdmin ? 'admin' : 'reseller',
+            previous_status: link.status,
+            new_status: newStatus,
+          },
+        });
+
+        // Discord notification
+        if (isBanAction) {
+          await sendDiscordLog('ban', '🚫 Client Banned (Login Blocked)',
+            `Access code **${link.access_code}** can no longer sign in.`,
+            [
+              { name: 'Group', value: link.group_name || 'Unknown', inline: true },
+              { name: 'Banned by', value: `${performerName} (${accessCode})`, inline: true },
+              { name: 'Email', value: link.client_email || 'Not provided', inline: false },
+            ]
+          );
+        } else {
+          await sendDiscordLog('activity', '✅ Client Unbanned',
+            `Access code **${link.access_code}** can sign in again.`,
+            [
+              { name: 'Group', value: link.group_name || 'Unknown', inline: true },
+              { name: 'Unbanned by', value: `${performerName} (${accessCode})`, inline: true },
+            ]
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ success: true, status: newStatus }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       // ============ GET CLIENT FLAG HISTORY ============
       case 'get-client-flag-history': {
         if (!isAdmin && !isReseller) {
@@ -1548,7 +1661,8 @@ Deno.serve(async (req) => {
           const resolved = !fromDetails ? nameMap[h.performed_by] : null;
           return {
             ...h,
-            performer_name: fromDetails || resolved?.name || null,
+            // Last-resort fallback: show the performer code so it never reads "Unknown"
+            performer_name: fromDetails || resolved?.name || h.performed_by || null,
             performer_role: h.details?.performer_role || resolved?.role || null,
           };
         });
