@@ -17,6 +17,7 @@ import ResellerDashboard from "./pages/ResellerDashboard";
 import Depuracion from "./pages/Depuracion";
 import FlagManagement from "./pages/FlagManagement";
 import ClearHistory from "./pages/ClearHistory";
+import BanManagement from "./pages/BanManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="/depuracion" element={<Depuracion />} />
               <Route path="/flags" element={<FlagManagement />} />
               <Route path="/clear-history" element={<ClearHistory />} />
+              <Route path="/ban" element={<BanManagement />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

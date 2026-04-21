@@ -221,32 +221,6 @@ export default function FlagManagement() {
                 </Button>
               </div>
             </div>
-
-            <div className="pt-3 border-t space-y-2">
-              <p className="text-sm font-medium">Block sign-in (individual ban)</p>
-              <p className="text-xs text-muted-foreground">
-                Banning only blocks login. Nothing is deleted. You can unban from here at any time.
-              </p>
-              {client.status === "banned" ? (
-                <Button
-                  variant="outline"
-                  disabled={updating}
-                  onClick={toggleBan}
-                  className="w-full border-green-500/40 text-green-600 hover:bg-green-500/10 hover:text-green-600"
-                >
-                  {updating ? "Working..." : "Unban user"}
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  disabled={updating}
-                  onClick={toggleBan}
-                  className="w-full border-red-600/40 text-red-600 hover:bg-red-600/10 hover:text-red-600"
-                >
-                  {updating ? "Working..." : "Ban user (block login)"}
-                </Button>
-              )}
-            </div>
           </CardContent>
         </Card>
       )}
